@@ -50,6 +50,12 @@ type StationTracksResult = {
   sequence?: Array<{ track?: YandexTrack }>;
 };
 
+type SearchResult = {
+  tracks?: {
+    results?: YandexTrack[];
+  };
+};
+
 type TrackTrailerResult = {
   track?: YandexTrack;
 };
@@ -67,6 +73,7 @@ type ThemeConfig = Theme & {
   chartId?: 'russia' | 'world';
   metatagIds?: string[];
   stationIds?: string[];
+  optionQueries?: string[];
 };
 
 type TrackSourceInput =
@@ -88,6 +95,19 @@ export type MusicDiagnostics = {
   allowFullTrackFallback: boolean;
   themeCount: number;
   lastFallbackReason?: string;
+  lastLoadStats?: TrackLoadStats;
+};
+
+type TrackLoadStats = {
+  candidates: number;
+  options: number;
+  playable: number;
+  trailerRequests: number;
+  trailerDirectUrls: number;
+  trailerTracks: number;
+  trailerAudioUrls: number;
+  fullTrackFallbacks: number;
+  audioFailures: number;
 };
 
 const THEMES: ThemeConfig[] = [
@@ -135,7 +155,8 @@ const THEMES: ThemeConfig[] = [
     description: 'Электронные подборки и плейлисты Яндекс Музыки',
     source: 'yandex',
     stationIds: ['genre:electronics', 'genre:electronic'],
-    metatagIds: ['electronic', 'electronics', 'dance-electronic']
+    metatagIds: ['electronic', 'electronics', 'dance-electronic'],
+    optionQueries: ['electronic music', 'edm', 'techno', 'house music']
   },
   {
     id: 'genre-dance',
@@ -143,7 +164,8 @@ const THEMES: ThemeConfig[] = [
     description: 'Танцевальные подборки Яндекс Музыки',
     source: 'yandex',
     stationIds: ['genre:dance'],
-    metatagIds: ['dance', 'club', 'house']
+    metatagIds: ['dance', 'club', 'house'],
+    optionQueries: ['dance music', 'club music', 'house music']
   },
   {
     id: 'genre-indie',
@@ -173,7 +195,8 @@ const THEMES: ThemeConfig[] = [
     description: 'K-pop подборки Яндекс Музыки',
     source: 'yandex',
     stationIds: ['genre:kpop', 'genre:k-pop'],
-    metatagIds: ['k-pop', 'kpop']
+    metatagIds: ['k-pop', 'kpop'],
+    optionQueries: ['k-pop', 'kpop', 'korean pop']
   },
   {
     id: 'demo-pop',
@@ -188,6 +211,7 @@ export class MusicService {
   private readonly forceDemo = process.env.YANDEX_MUSIC_USE_DEMO === 'true';
   private readonly allowFullTrackFallback = process.env.YANDEX_MUSIC_ALLOW_FULL_TRACK_FALLBACK === 'true';
   private lastFallbackReason: string | undefined;
+  private lastLoadStats: TrackLoadStats | undefined;
 
   getThemes(): Theme[] {
     return THEMES.map(({ chartId: _chartId, metatagIds: _metatagIds, stationIds: _stationIds, ...theme }) => theme);
@@ -199,7 +223,8 @@ export class MusicService {
       forceDemo: this.forceDemo,
       allowFullTrackFallback: this.allowFullTrackFallback,
       themeCount: THEMES.length,
-      lastFallbackReason: this.lastFallbackReason
+      lastFallbackReason: this.lastFallbackReason,
+      lastLoadStats: this.lastLoadStats
     };
   }
 
@@ -215,9 +240,10 @@ export class MusicService {
       const candidates = uniqueByTrackId(shuffle(await this.getSourceCandidates(themeIds, playlistUrl)));
       const optionTracks = uniqueByTitle(candidates.map(toTrackMetadata)).slice(0, options.optionLimit);
       const playableTracks: Track[] = [];
+      const stats = createTrackLoadStats(candidates.length, optionTracks.length);
 
       for (const candidate of candidates) {
-        const audioUrl = await this.resolveAudioUrl(candidate);
+        const audioUrl = await this.resolveAudioUrl(candidate, stats);
         if (audioUrl) {
           playableTracks.push({
             ...toTrackMetadata(candidate),
@@ -232,6 +258,8 @@ export class MusicService {
 
       if (playableTracks.length >= 4 && optionTracks.length >= 4) {
         this.lastFallbackReason = undefined;
+        stats.playable = playableTracks.length;
+        this.lastLoadStats = stats;
         return {
           playableTracks,
           optionTracks,
@@ -239,6 +267,8 @@ export class MusicService {
         };
       }
 
+      stats.playable = playableTracks.length;
+      this.lastLoadStats = stats;
       return this.fallback(`Yandex returned ${playableTracks.length} playable tracks and ${optionTracks.length} options`);
     } catch (error) {
       return this.fallback(toClientMessage(error));
@@ -281,21 +311,21 @@ export class MusicService {
       return this.getChartCandidates(theme.chartId);
     }
 
+    const tracks: YandexTrack[] = [];
+
     if (theme.stationIds) {
-      const tracks = await this.getStationCandidates(theme.stationIds);
-      if (tracks.length > 0) {
-        return tracks;
-      }
+      tracks.push(...(await this.getStationCandidates(theme.stationIds)));
     }
 
     if (theme.metatagIds) {
-      const tracks = await this.getMetatagCandidates(theme.metatagIds);
-      if (tracks.length > 0) {
-        return tracks;
-      }
+      tracks.push(...(await this.getMetatagCandidates(theme.metatagIds)));
     }
 
-    return [];
+    if (theme.optionQueries && tracks.length < 160) {
+      tracks.push(...(await this.getSearchCandidates(theme.optionQueries)));
+    }
+
+    return uniqueByTrackId(tracks);
   }
 
   private async getSourceCandidates(themeIds: string[], playlistUrl?: string): Promise<YandexTrack[]> {
@@ -344,7 +374,7 @@ export class MusicService {
     for (const stationId of stationIds) {
       try {
         const result = await this.get<StationTracksResult>(
-          `/rotor/station/${encodeURIComponent(stationId)}/tracks?${new URLSearchParams({ settings2: 'true' })}`
+          `/rotor/station/${encodeURI(stationId)}/tracks?${new URLSearchParams({ settings2: 'true' })}`
         );
         tracks.push(
           ...(result.sequence
@@ -356,6 +386,25 @@ export class MusicService {
       }
 
       if (tracks.length >= 80) {
+        break;
+      }
+    }
+
+    return uniqueByTrackId(tracks);
+  }
+
+  private async getSearchCandidates(queries: string[]): Promise<YandexTrack[]> {
+    const tracks: YandexTrack[] = [];
+
+    for (const query of queries) {
+      try {
+        const result = await this.get<SearchResult>(`/search?${new URLSearchParams({ text: query, type: 'track', page: '0' })}`);
+        tracks.push(...(result.tracks?.results?.filter((track): track is YandexTrack => Boolean(track?.id && track.title)) ?? []));
+      } catch (error) {
+        console.warn(`[music] search ${query} failed: ${toClientMessage(error)}`);
+      }
+
+      if (tracks.length >= 160) {
         break;
       }
     }
@@ -442,24 +491,33 @@ export class MusicService {
     return extractTracks(playlist.tracks).slice(0, 260);
   }
 
-  private async resolveAudioUrl(track: YandexTrack): Promise<string | undefined> {
-    const trailerUrl = await this.tryTrailerAudioUrl(track);
+  private async resolveAudioUrl(track: YandexTrack, stats?: TrackLoadStats): Promise<string | undefined> {
+    const trailerUrl = await this.tryTrailerAudioUrl(track, stats);
     if (trailerUrl) {
       return trailerUrl;
     }
 
     if (!this.allowFullTrackFallback) {
+      if (stats) stats.audioFailures += 1;
       return undefined;
     }
 
-    return this.tryDownloadInfoAudioUrl(track.id);
+    const audioUrl = await this.tryDownloadInfoAudioUrl(track.id);
+    if (audioUrl) {
+      if (stats) stats.fullTrackFallbacks += 1;
+    } else if (stats) {
+      stats.audioFailures += 1;
+    }
+    return audioUrl;
   }
 
-  private async tryTrailerAudioUrl(track: YandexTrack): Promise<string | undefined> {
+  private async tryTrailerAudioUrl(track: YandexTrack, stats?: TrackLoadStats): Promise<string | undefined> {
+    if (stats) stats.trailerRequests += 1;
     try {
       const result = await this.get<TrackTrailerResult | unknown>(`/tracks/${track.id}/trailer`);
       const directUrl = findAudioUrl(result);
       if (directUrl) {
+        if (stats) stats.trailerDirectUrls += 1;
         return directUrl;
       }
 
@@ -468,7 +526,14 @@ export class MusicService {
           ? result.track.id
           : undefined;
 
-      return trailerTrackId ? this.tryDownloadInfoAudioUrl(trailerTrackId as string | number) : undefined;
+      if (!trailerTrackId) {
+        return undefined;
+      }
+
+      if (stats) stats.trailerTracks += 1;
+      const trailerAudioUrl = await this.tryDownloadInfoAudioUrl(trailerTrackId as string | number);
+      if (trailerAudioUrl && stats) stats.trailerAudioUrls += 1;
+      return trailerAudioUrl;
     } catch {
       return undefined;
     }
@@ -676,6 +741,20 @@ function shuffle<T>(items: T[]): T[] {
     [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
   }
   return result;
+}
+
+function createTrackLoadStats(candidates: number, options: number): TrackLoadStats {
+  return {
+    candidates,
+    options,
+    playable: 0,
+    trailerRequests: 0,
+    trailerDirectUrls: 0,
+    trailerTracks: 0,
+    trailerAudioUrls: 0,
+    fullTrackFallbacks: 0,
+    audioFailures: 0
+  };
 }
 
 function toDemoPool(isFallback: boolean): TrackPool {

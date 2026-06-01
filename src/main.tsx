@@ -533,7 +533,10 @@ function Lobby({
       <h2>Ожидание игроков</h2>
       <p className="muted">Ссылка уже ведет прямо в комнату. Хост выбирает тему, длительность и запускает первый раунд.</p>
 
-      <div className="settings-grid">
+      <div className="settings-stack">
+        <details className="settings-section" open>
+          <summary>Настройки игры</summary>
+          <div className="settings-grid">
         <label className="field">
           <span>Тема</span>
           <div className="theme-picker">
@@ -627,6 +630,8 @@ function Lobby({
                 : themes.find((theme) => theme.id === selectedThemeIds[0])?.description ?? 'Треки подбираются из Яндекс Музыки'}
           </span>
         </div>
+          </div>
+        </details>
       </div>
 
       {isBusy && <LoadingStrip label={busyLabel || 'Готовим треки'} />}
