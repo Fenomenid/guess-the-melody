@@ -7,6 +7,7 @@ import type {
   RoomSettings,
   RoomStatus,
   Track,
+  TrackMetadata,
   TrackOption
 } from './types';
 
@@ -105,17 +106,28 @@ export class GameEngine {
     return toPublicRoom(room);
   }
 
-  startNextRound(code: string, tracks: Track[], durationMs?: number, now = Date.now()): QuestionInternal {
+  startNextRound(
+    code: string,
+    tracks: Track[],
+    optionTracksOrDuration: TrackMetadata[] | number = tracks,
+    durationMsOrNow?: number,
+    now = Date.now()
+  ): QuestionInternal {
     const room = this.requireRoom(code);
     if (tracks.length < 4) {
       throw new Error('At least four playable tracks are required');
     }
+    const optionTracks = Array.isArray(optionTracksOrDuration) ? optionTracksOrDuration : tracks;
+    const durationMs = Array.isArray(optionTracksOrDuration) ? durationMsOrNow : optionTracksOrDuration;
+    const startedAt = Array.isArray(optionTracksOrDuration) ? now : (durationMsOrNow ?? now);
 
     const available = tracks.filter((track) => !room.usedTrackIds.has(track.id));
     const correctPool = available.length > 0 ? available : tracks;
     const correctTrack = shuffle(correctPool)[0];
     const distractors = shuffle(
-      tracks.filter((track) => track.id !== correctTrack.id && normalizeTitle(track.title) !== normalizeTitle(correctTrack.title))
+      uniqueByTitle(optionTracks).filter(
+        (track) => track.id !== correctTrack.id && normalizeTitle(track.title) !== normalizeTitle(correctTrack.title)
+      )
     ).slice(0, 3);
     const selected = [correctTrack, ...distractors];
     if (selected.length < 4) {
@@ -142,7 +154,7 @@ export class GameEngine {
       coverUrl: correctTrack.coverUrl,
       options,
       durationMs: durationMs ?? room.settings.questionDurationMs,
-      startedAt: now,
+      startedAt,
       correctOptionId: correctTrack.id,
       correctTrack,
       scoresApplied: false
@@ -352,6 +364,21 @@ function sanitizeName(value: string): string {
 
 function normalizeTitle(value: string): string {
   return value.trim().toLocaleLowerCase('ru').replace(/\s+/g, ' ');
+}
+
+function uniqueByTitle<T extends TrackMetadata>(tracks: T[]): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+
+  for (const track of tracks) {
+    const key = normalizeTitle(track.title);
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(track);
+    }
+  }
+
+  return unique;
 }
 
 function createRoomCode(): string {

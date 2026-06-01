@@ -31,6 +31,27 @@ describe('GameEngine', () => {
     expect(publicRoom.correctTrack).toBeUndefined();
   });
 
+  it('can build answer options from a larger metadata pool', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    const narrowPlayablePool: Track[] = tracks.map((track, index) => ({
+      ...track,
+      title: index === 0 ? 'Correct song' : 'Correct song'
+    }));
+    const optionPool = [
+      ...narrowPlayablePool,
+      { id: 'option-1', title: 'Wrong one', artist: 'Artist' },
+      { id: 'option-2', title: 'Wrong two', artist: 'Artist' },
+      { id: 'option-3', title: 'Wrong three', artist: 'Artist' },
+      { id: 'option-4', title: 'Wrong four', artist: 'Artist' }
+    ];
+
+    const question = engine.startNextRound('ROOM42', narrowPlayablePool, optionPool, 10_000, 1000);
+
+    expect(question.options).toHaveLength(4);
+    expect(new Set(question.options.map((option) => option.title)).size).toBe(4);
+  });
+
   it('scores a fast correct answer higher than a slow correct answer', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });

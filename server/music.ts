@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Theme, Track } from './types';
+import type { Theme, Track, TrackMetadata } from './types';
 
 const YANDEX_API_BASE = 'https://api.music.yandex.net';
 const DOWNLOAD_SIGN_SALT = 'XGRlBW9FXlekgbPrRHuSiA';
@@ -16,16 +16,38 @@ type YandexTrack = {
   artists?: Array<{ name: string }>;
 };
 
+type YandexTrackShort = {
+  track?: YandexTrack;
+};
+
+type YandexPlaylist = {
+  uid?: string | number;
+  kind?: string | number;
+  owner?: { id?: string | number; uid?: string | number };
+  playlistId?: string;
+  id?: string;
+  tracks?: Array<YandexTrack | YandexTrackShort>;
+};
+
 type ChartResult = {
   chart?: {
     tracks?: Array<{ track?: YandexTrack }>;
   };
 };
 
-type SearchResult = {
-  tracks?: {
-    results?: YandexTrack[];
-  };
+type MetatagResult = {
+  playlists?: YandexPlaylist[];
+  tracks?: Array<YandexTrack | YandexTrackShort>;
+};
+
+type MetatagPlaylistsResult = {
+  playlists?: YandexPlaylist[];
+};
+
+type PlaylistResult = YandexPlaylist | { playlist?: YandexPlaylist };
+
+type TrackTrailerResult = {
+  track?: YandexTrack;
 };
 
 type DownloadInfo = {
@@ -39,7 +61,21 @@ type DownloadInfo = {
 
 type ThemeConfig = Theme & {
   chartId?: 'russia' | 'world';
-  query?: string;
+  metatagIds?: string[];
+};
+
+export type TrackPool = {
+  playableTracks: Track[];
+  optionTracks: TrackMetadata[];
+  isFallback: boolean;
+};
+
+export type MusicDiagnostics = {
+  tokenConfigured: boolean;
+  forceDemo: boolean;
+  allowFullTrackFallback: boolean;
+  themeCount: number;
+  lastFallbackReason?: string;
 };
 
 const THEMES: ThemeConfig[] = [
@@ -58,53 +94,67 @@ const THEMES: ThemeConfig[] = [
     chartId: 'world'
   },
   {
-    id: 'genre-russian-pop',
-    title: 'Русский поп',
-    description: 'Жанровая подборка через поиск Яндекс Музыки',
+    id: 'genre-pop',
+    title: 'Поп',
+    description: 'Готовые поп-подборки Яндекс Музыки через метатеги',
     source: 'yandex',
-    query: 'русский поп'
-  },
-  {
-    id: 'genre-rap',
-    title: 'Рэп и хип-хоп',
-    description: 'Русский и мировой рэп из поиска Яндекс Музыки',
-    source: 'yandex',
-    query: 'рэп хип-хоп'
+    metatagIds: ['pop', 'ruspop', 'russian-pop', 'foreign-pop']
   },
   {
     id: 'genre-rock',
     title: 'Рок',
-    description: 'Рок-треки из поиска Яндекс Музыки',
+    description: 'Готовые рок-подборки Яндекс Музыки через метатеги',
     source: 'yandex',
-    query: 'рок'
+    metatagIds: ['rock', 'rusrock', 'russian-rock', 'foreign-rock']
+  },
+  {
+    id: 'genre-rap',
+    title: 'Рэп и хип-хоп',
+    description: 'Готовые рэп и хип-хоп подборки Яндекс Музыки',
+    source: 'yandex',
+    metatagIds: ['rap', 'hip-hop', 'rusrap', 'russian-rap']
   },
   {
     id: 'genre-electronic',
     title: 'Электроника',
-    description: 'Электронная музыка из поиска Яндекс Музыки',
+    description: 'Электронные подборки и плейлисты Яндекс Музыки',
     source: 'yandex',
-    query: 'электронная музыка'
+    metatagIds: ['electronic', 'electronics', 'dance-electronic']
   },
   {
     id: 'genre-dance',
     title: 'Танцевальная',
-    description: 'Танцевальные треки из поиска Яндекс Музыки',
+    description: 'Танцевальные подборки Яндекс Музыки',
     source: 'yandex',
-    query: 'танцевальная музыка'
+    metatagIds: ['dance', 'club', 'house']
   },
   {
     id: 'genre-indie',
     title: 'Инди',
-    description: 'Инди-треки из поиска Яндекс Музыки',
+    description: 'Инди-подборки Яндекс Музыки',
     source: 'yandex',
-    query: 'инди музыка'
+    metatagIds: ['indie', 'alternative', 'rusindie']
   },
   {
     id: 'genre-2000s',
     title: 'Нулевые',
-    description: 'Хиты 2000-х из поиска Яндекс Музыки',
+    description: 'Подборки треков 2000-х из Яндекс Музыки',
     source: 'yandex',
-    query: 'хиты 2000'
+    metatagIds: ['2000s', '00s', 'decade-2000']
+  },
+  {
+    id: 'genre-90s',
+    title: 'Девяностые',
+    description: 'Подборки треков 90-х из Яндекс Музыки',
+    source: 'yandex',
+    metatagIds: ['90s', '1990s', 'decade-1990']
+  },
+  {
+    id: 'genre-kpop',
+    title: 'K-pop',
+    description: 'K-pop подборки Яндекс Музыки',
+    source: 'yandex',
+    metatagIds: ['k-pop', 'kpop']
   },
   {
     id: 'demo-pop',
@@ -117,42 +167,72 @@ const THEMES: ThemeConfig[] = [
 export class MusicService {
   private readonly token = process.env.YANDEX_MUSIC_TOKEN;
   private readonly forceDemo = process.env.YANDEX_MUSIC_USE_DEMO === 'true';
+  private readonly allowFullTrackFallback = process.env.YANDEX_MUSIC_ALLOW_FULL_TRACK_FALLBACK === 'true';
+  private lastFallbackReason: string | undefined;
 
   getThemes(): Theme[] {
-    return THEMES.map(({ chartId: _chartId, query: _query, ...theme }) => theme);
+    return THEMES.map(({ chartId: _chartId, metatagIds: _metatagIds, ...theme }) => theme);
   }
 
-  async getPlayableTracks(themeId: string, minimum = 8): Promise<Track[]> {
+  diagnostics(): MusicDiagnostics {
+    return {
+      tokenConfigured: Boolean(this.token),
+      forceDemo: this.forceDemo,
+      allowFullTrackFallback: this.allowFullTrackFallback,
+      themeCount: THEMES.length,
+      lastFallbackReason: this.lastFallbackReason
+    };
+  }
+
+  async prepareTrackPool(
+    themeId: string,
+    options: { playableLimit: number; optionLimit: number }
+  ): Promise<TrackPool> {
     if (this.forceDemo || themeId === 'demo-pop') {
-      return DEMO_TRACKS;
+      return toDemoPool(false);
     }
 
     try {
       const theme = THEMES.find((candidate) => candidate.id === themeId) ?? THEMES[0];
-      const candidates = shuffle(await this.getThemeCandidates(theme));
-      const playable: Track[] = [];
+      const candidates = uniqueByTrackId(shuffle(await this.getThemeCandidates(theme)));
+      const optionTracks = uniqueByTitle(candidates.map(toTrackMetadata)).slice(0, options.optionLimit);
+      const playableTracks: Track[] = [];
 
       for (const candidate of candidates) {
         const audioUrl = await this.resolveAudioUrl(candidate);
         if (audioUrl) {
-          playable.push({
-            id: String(candidate.id),
-            title: candidate.title,
-            artist: candidate.artists?.map((artist) => artist.name).join(', ') || 'Неизвестный исполнитель',
-            coverUrl: normalizeCoverUrl(candidate.coverUri),
+          playableTracks.push({
+            ...toTrackMetadata(candidate),
             audioUrl
           });
         }
 
-        if (playable.length >= minimum) {
+        if (playableTracks.length >= options.playableLimit) {
           break;
         }
       }
 
-      return playable.length >= 4 ? playable : DEMO_TRACKS;
-    } catch {
-      return DEMO_TRACKS;
+      if (playableTracks.length >= 4 && optionTracks.length >= 4) {
+        this.lastFallbackReason = undefined;
+        return {
+          playableTracks,
+          optionTracks,
+          isFallback: false
+        };
+      }
+
+      return this.fallback(`Yandex returned ${playableTracks.length} playable tracks and ${optionTracks.length} options`);
+    } catch (error) {
+      return this.fallback(toClientMessage(error));
     }
+  }
+
+  async getPlayableTracks(themeId: string, minimum = 8): Promise<Track[]> {
+    const pool = await this.prepareTrackPool(themeId, {
+      playableLimit: minimum,
+      optionLimit: Math.max(32, minimum * 4)
+    });
+    return pool.playableTracks;
   }
 
   async probe(limit = 10): Promise<Array<{ id: string; title: string; hasAudio: boolean; audioUrl?: string }>> {
@@ -172,20 +252,25 @@ export class MusicService {
     return results;
   }
 
+  private fallback(reason: string): TrackPool {
+    this.lastFallbackReason = reason;
+    console.warn(`[music] using demo fallback: ${reason}`);
+    return toDemoPool(true);
+  }
+
   private async getThemeCandidates(theme: ThemeConfig): Promise<YandexTrack[]> {
-    if (theme.query) {
-      const result = await this.get<SearchResult>(`/search?${new URLSearchParams({ text: theme.query, type: 'track', page: '0' })}`);
-      const tracks = result.tracks?.results?.filter((track): track is YandexTrack => Boolean(track?.id && track.title)) ?? [];
+    if (theme.chartId) {
+      return this.getChartCandidates(theme.chartId);
+    }
+
+    if (theme.metatagIds) {
+      const tracks = await this.getMetatagCandidates(theme.metatagIds);
       if (tracks.length > 0) {
         return tracks;
       }
     }
 
-    try {
-      return await this.getChartCandidates(theme.chartId ?? 'russia');
-    } catch {
-      return this.getChartCandidates('russia');
-    }
+    return this.getChartCandidates('russia');
   }
 
   private async getChartCandidates(chartId: 'russia' | 'world'): Promise<YandexTrack[]> {
@@ -197,19 +282,108 @@ export class MusicService {
     );
   }
 
+  private async getMetatagCandidates(metatagIds: string[]): Promise<YandexTrack[]> {
+    const tracks: YandexTrack[] = [];
+
+    for (const metatagId of metatagIds) {
+      tracks.push(...(await this.getMetatagTracks(metatagId)));
+      if (tracks.length >= 120) {
+        break;
+      }
+    }
+
+    return uniqueByTrackId(tracks);
+  }
+
+  private async getMetatagTracks(metatagId: string): Promise<YandexTrack[]> {
+    const tracks: YandexTrack[] = [];
+
+    try {
+      const params = new URLSearchParams({
+        tracksCount: '80',
+        playlistsCount: '12',
+        tracksSortBy: 'popular'
+      });
+      const result = await this.get<MetatagResult>(`/metatags/${metatagId}?${params}`);
+      tracks.push(...extractTracks(result.tracks));
+      tracks.push(...(await this.getPlaylistTracks(result.playlists)));
+    } catch (error) {
+      console.warn(`[music] metatag ${metatagId} failed: ${toClientMessage(error)}`);
+    }
+
+    if (tracks.length >= 40) {
+      return tracks;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        offset: '0',
+        limit: '16',
+        sortBy: 'popular'
+      });
+      const result = await this.get<MetatagPlaylistsResult>(`/metatags/${metatagId}/playlists?${params}`);
+      tracks.push(...(await this.getPlaylistTracks(result.playlists)));
+    } catch (error) {
+      console.warn(`[music] metatag playlists ${metatagId} failed: ${toClientMessage(error)}`);
+    }
+
+    return tracks;
+  }
+
+  private async getPlaylistTracks(playlists: YandexPlaylist[] | undefined): Promise<YandexTrack[]> {
+    const tracks: YandexTrack[] = [];
+
+    for (const playlist of playlists ?? []) {
+      tracks.push(...extractTracks(playlist.tracks));
+      if (tracks.length >= 160) {
+        break;
+      }
+
+      const uid = playlist.owner?.id ?? playlist.owner?.uid ?? playlist.uid;
+      const kind = playlist.kind;
+      if (!uid || !kind) {
+        continue;
+      }
+
+      try {
+        const result = await this.get<PlaylistResult>(`/users/${uid}/playlists/${kind}`);
+        const fullPlaylist: YandexPlaylist = isPlaylistEnvelope(result) ? result.playlist : (result as YandexPlaylist);
+        tracks.push(...extractTracks(fullPlaylist.tracks));
+      } catch (error) {
+        console.warn(`[music] playlist ${uid}:${kind} failed: ${toClientMessage(error)}`);
+      }
+    }
+
+    return tracks;
+  }
+
   private async resolveAudioUrl(track: YandexTrack): Promise<string | undefined> {
-    const trailerUrl = await this.tryTrailerAudioUrl(track.id);
+    const trailerUrl = await this.tryTrailerAudioUrl(track);
     if (trailerUrl) {
       return trailerUrl;
+    }
+
+    if (!this.allowFullTrackFallback) {
+      return undefined;
     }
 
     return this.tryDownloadInfoAudioUrl(track.id);
   }
 
-  private async tryTrailerAudioUrl(trackId: string | number): Promise<string | undefined> {
+  private async tryTrailerAudioUrl(track: YandexTrack): Promise<string | undefined> {
     try {
-      const result = await this.get<unknown>(`/tracks/${trackId}/trailer`);
-      return findAudioUrl(result);
+      const result = await this.get<TrackTrailerResult | unknown>(`/tracks/${track.id}/trailer`);
+      const directUrl = findAudioUrl(result);
+      if (directUrl) {
+        return directUrl;
+      }
+
+      const trailerTrackId =
+        result && typeof result === 'object' && 'track' in result && result.track && typeof result.track === 'object' && 'id' in result.track
+          ? result.track.id
+          : undefined;
+
+      return trailerTrackId ? this.tryDownloadInfoAudioUrl(trailerTrackId as string | number) : undefined;
     } catch {
       return undefined;
     }
@@ -311,11 +485,73 @@ function findAudioUrl(value: unknown): string | undefined {
   return undefined;
 }
 
+function extractTracks(tracks: Array<YandexTrack | YandexTrackShort> | undefined): YandexTrack[] {
+  return (
+    tracks
+      ?.map(getEntryTrack)
+      .filter((track): track is YandexTrack => Boolean(track?.id && track.title)) ?? []
+  );
+}
+
+function getEntryTrack(entry: YandexTrack | YandexTrackShort): YandexTrack | undefined {
+  if ('id' in entry && 'title' in entry) {
+    return entry;
+  }
+  return entry.track;
+}
+
+function isPlaylistEnvelope(value: PlaylistResult): value is { playlist: YandexPlaylist } {
+  return 'playlist' in value && Boolean(value.playlist);
+}
+
 function normalizeCoverUrl(coverUri?: string): string | undefined {
   if (!coverUri) {
     return undefined;
   }
   return `https://${coverUri.replace('%%', '400x400')}`;
+}
+
+function toTrackMetadata(track: YandexTrack): TrackMetadata {
+  return {
+    id: String(track.id),
+    title: track.title,
+    artist: track.artists?.map((artist) => artist.name).join(', ') || 'Неизвестный исполнитель',
+    coverUrl: normalizeCoverUrl(track.coverUri)
+  };
+}
+
+function uniqueByTrackId<T extends { id: string | number }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+
+  for (const item of items) {
+    const key = String(item.id);
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(item);
+    }
+  }
+
+  return unique;
+}
+
+function uniqueByTitle<T extends { title: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+
+  for (const item of items) {
+    const key = normalizeTitle(item.title);
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(item);
+    }
+  }
+
+  return unique;
+}
+
+function normalizeTitle(value: string): string {
+  return value.trim().toLocaleLowerCase('ru').replace(/\s+/g, ' ');
 }
 
 function shuffle<T>(items: T[]): T[] {
@@ -325,6 +561,18 @@ function shuffle<T>(items: T[]): T[] {
     [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
   }
   return result;
+}
+
+function toDemoPool(isFallback: boolean): TrackPool {
+  return {
+    playableTracks: DEMO_TRACKS,
+    optionTracks: DEMO_TRACKS.map(({ audioUrl: _audioUrl, ...track }) => track),
+    isFallback
+  };
+}
+
+function toClientMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unexpected Yandex Music error';
 }
 
 const DEMO_TRACKS: Track[] = [

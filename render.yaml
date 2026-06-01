@@ -11,6 +11,10 @@ services:
         value: production
       - key: YANDEX_MUSIC_USE_DEMO
         value: "false"
+      - key: YANDEX_MUSIC_ALLOW_FULL_TRACK_FALLBACK
+        value: "false"
+      - key: YANDEX_MUSIC_TOKEN
+        sync: false
       - key: UPSTASH_REDIS_REST_URL
         sync: false
       - key: UPSTASH_REDIS_REST_TOKEN

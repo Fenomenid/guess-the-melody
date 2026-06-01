@@ -450,6 +450,32 @@ function Lobby({
   onStart: () => void;
   onSettingsChange: (settings: Partial<Room['settings']>) => void;
 }) {
+  const [roundsDraft, setRoundsDraft] = useState(String(room.settings.rounds));
+  const [secondsDraft, setSecondsDraft] = useState(String(room.settings.questionDurationMs / 1000));
+
+  useEffect(() => {
+    setRoundsDraft(String(room.settings.rounds));
+    setSecondsDraft(String(room.settings.questionDurationMs / 1000));
+  }, [room.settings.rounds, room.settings.questionDurationMs]);
+
+  function commitRounds() {
+    const value = Number(roundsDraft);
+    const rounds = Number.isFinite(value) ? Math.max(1, Math.min(20, Math.round(value))) : room.settings.rounds;
+    setRoundsDraft(String(rounds));
+    if (rounds !== room.settings.rounds) {
+      onSettingsChange({ rounds });
+    }
+  }
+
+  function commitSeconds() {
+    const value = Number(secondsDraft);
+    const seconds = Number.isFinite(value) ? Math.max(5, Math.min(30, Math.round(value))) : room.settings.questionDurationMs / 1000;
+    setSecondsDraft(String(seconds));
+    if (seconds * 1000 !== room.settings.questionDurationMs) {
+      onSettingsChange({ questionDurationMs: seconds * 1000 });
+    }
+  }
+
   return (
     <div className="stage lobby-stage">
       <p className="eyebrow">Лобби</p>
@@ -474,8 +500,14 @@ function Lobby({
             min={1}
             max={20}
             disabled={!isHost || isBusy}
-            value={room.settings.rounds}
-            onChange={(event) => onSettingsChange({ rounds: Number(event.target.value) })}
+            value={roundsDraft}
+            onBlur={commitRounds}
+            onChange={(event) => setRoundsDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur();
+              }
+            }}
           />
         </label>
         <label className="field">
@@ -485,8 +517,14 @@ function Lobby({
             min={5}
             max={30}
             disabled={!isHost || isBusy}
-            value={room.settings.questionDurationMs / 1000}
-            onChange={(event) => onSettingsChange({ questionDurationMs: Number(event.target.value) * 1000 })}
+            value={secondsDraft}
+            onBlur={commitSeconds}
+            onChange={(event) => setSecondsDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur();
+              }
+            }}
           />
         </label>
         <div className="notice">

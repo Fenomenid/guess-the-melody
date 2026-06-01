@@ -12,12 +12,15 @@ export type TrackOption = {
   title: string;
 };
 
-export type Track = {
+export type TrackMetadata = {
   id: string;
   title: string;
   artist: string;
-  audioUrl: string;
   coverUrl?: string;
+};
+
+export type Track = TrackMetadata & {
+  audioUrl: string;
 };
 
 export type Question = {

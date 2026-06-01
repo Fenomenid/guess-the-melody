@@ -6,7 +6,7 @@ import { Server } from 'socket.io';
 import { GameEngine } from './game';
 import { MusicService } from './music';
 import { RoomStore } from './roomStore';
-import type { Track } from './types';
+import type { Track, TrackMetadata } from './types';
 
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? '0.0.0.0';
@@ -25,6 +25,7 @@ const engine = new GameEngine();
 const music = new MusicService();
 const roomStore = new RoomStore();
 const roomTracks = new Map<string, Track[]>();
+const roomOptionTracks = new Map<string, TrackMetadata[]>();
 const roundTimers = new Map<string, NodeJS.Timeout>();
 
 app.use(cors({ origin: clientOrigin }));
@@ -36,6 +37,10 @@ app.get('/api/health', (_request, response) => {
 
 app.get('/api/themes', (_request, response) => {
   response.json({ data: music.getThemes() });
+});
+
+app.get('/api/music/diagnostics', (_request, response) => {
+  response.json({ data: music.diagnostics() });
 });
 
 app.use(express.static(path.join(process.cwd(), 'dist')));
@@ -87,9 +92,12 @@ io.on('connection', (socket) => {
       await persistRooms();
       io.to(preparingRoom.code).emit('room_state', preparingRoom);
 
-      const requestedPoolSize = Math.max(32, preparingRoom.settings.rounds * 5);
-      const tracks = await music.getPlayableTracks(preparingRoom.settings.themeId, requestedPoolSize);
-      roomTracks.set(preparingRoom.code, shuffle(tracks));
+      const pool = await music.prepareTrackPool(preparingRoom.settings.themeId, {
+        playableLimit: Math.max(10, preparingRoom.settings.rounds + 6),
+        optionLimit: Math.max(80, preparingRoom.settings.rounds * 12)
+      });
+      roomTracks.set(preparingRoom.code, shuffle(pool.playableTracks));
+      roomOptionTracks.set(preparingRoom.code, shuffle(pool.optionTracks));
       await startRound(preparingRoom.code);
       callback?.({ data: engine.getPublicRoom(preparingRoom.code) });
     } catch (error) {
@@ -130,6 +138,10 @@ io.on('connection', (socket) => {
       callback?.({ data: result.room ?? null });
       if (result.room) {
         io.to(result.room.code).emit('room_state', result.room);
+      } else if (result.deletedRoomCode) {
+        roomTracks.delete(result.deletedRoomCode);
+        roomOptionTracks.delete(result.deletedRoomCode);
+        clearRoundTimer(result.deletedRoomCode);
       }
     } catch (error) {
       callback?.({ error: toClientError(error) });
@@ -149,6 +161,8 @@ io.on('connection', (socket) => {
     try {
       clearRoundTimer(code);
       const room = engine.resetToLobby(code);
+      roomTracks.delete(room.code);
+      roomOptionTracks.delete(room.code);
       await persistRooms();
       callback?.({ data: room });
       io.to(room.code).emit('room_state', room);
@@ -175,11 +189,12 @@ async function startRound(code: string): Promise<void> {
   clearRoundTimer(code);
   const room = engine.getPublicRoom(code);
   const tracks = roomTracks.get(room.code);
+  const optionTracks = roomOptionTracks.get(room.code) ?? tracks;
   if (!tracks) {
     throw new Error('No track pool prepared for room');
   }
 
-  engine.startNextRound(room.code, tracks);
+  engine.startNextRound(room.code, tracks, optionTracks);
   const updated = engine.getPublicRoom(room.code);
   await persistRooms();
   io.to(room.code).emit('round_started', updated);
