@@ -124,11 +124,11 @@ export class GameEngine {
     const available = tracks.filter((track) => !room.usedTrackIds.has(track.id));
     const correctPool = available.length > 0 ? available : tracks;
     const correctTrack = shuffle(correctPool)[0];
-    const distractors = shuffle(
-      uniqueByTitle(optionTracks).filter(
-        (track) => track.id !== correctTrack.id && normalizeTitle(track.title) !== normalizeTitle(correctTrack.title)
-      )
-    ).slice(0, 3);
+    const distractorPool = uniqueByTitle(optionTracks).filter(
+      (track) => track.id !== correctTrack.id && normalizeTitle(track.title) !== normalizeTitle(correctTrack.title)
+    );
+    const sameScriptDistractors = distractorPool.filter((track) => titleScriptBucket(track.title) === titleScriptBucket(correctTrack.title));
+    const distractors = shuffle(sameScriptDistractors.length >= 3 ? sameScriptDistractors : distractorPool).slice(0, 3);
     const selected = [correctTrack, ...distractors];
     if (selected.length < 4) {
       throw new Error('At least four unique playable tracks are required');
@@ -379,6 +379,24 @@ function uniqueByTitle<T extends TrackMetadata>(tracks: T[]): T[] {
   }
 
   return unique;
+}
+
+type TitleScriptBucket = 'cyrillic' | 'latin' | 'mixed' | 'unknown';
+
+function titleScriptBucket(title: string): TitleScriptBucket {
+  const hasCyrillic = /[А-Яа-яЁё]/.test(title);
+  const hasLatin = /[A-Za-z]/.test(title);
+
+  if (hasCyrillic && hasLatin) {
+    return 'mixed';
+  }
+  if (hasCyrillic) {
+    return 'cyrillic';
+  }
+  if (hasLatin) {
+    return 'latin';
+  }
+  return 'unknown';
 }
 
 function createRoomCode(): string {

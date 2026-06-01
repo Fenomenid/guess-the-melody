@@ -554,8 +554,8 @@ function PreparingStage() {
     <div className="stage preparing-stage">
       <p className="eyebrow">Загрузка</p>
       <h2>Готовим треки из Яндекс Музыки</h2>
-      <p className="muted">Сервер собирает playable preview, перемешивает пул и проверяет варианты ответов.</p>
-      <LoadingStrip label="Ищем отрывки и обложки" />
+      <p className="muted">Подбираем короткие отрывки и варианты ответов для раунда.</p>
+      <LoadingStrip label="Ищем отрывки" />
       <Equalizer />
     </div>
   );

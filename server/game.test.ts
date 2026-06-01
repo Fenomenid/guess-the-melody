@@ -52,6 +52,28 @@ describe('GameEngine', () => {
     expect(new Set(question.options.map((option) => option.title)).size).toBe(4);
   });
 
+  it('prefers answer options with the same title script as the correct track', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    const cyrillicTracks: Track[] = [
+      { id: 'ru-1', title: 'Ночь', artist: 'Artist', audioUrl: 'https://example.test/1.mp3' },
+      { id: 'ru-2', title: 'Звезда', artist: 'Artist', audioUrl: 'https://example.test/2.mp3' },
+      { id: 'ru-3', title: 'Город', artist: 'Artist', audioUrl: 'https://example.test/3.mp3' },
+      { id: 'ru-4', title: 'Река', artist: 'Artist', audioUrl: 'https://example.test/4.mp3' }
+    ];
+    const optionPool = [
+      ...cyrillicTracks,
+      { id: 'en-1', title: 'Night', artist: 'Artist' },
+      { id: 'en-2', title: 'Star', artist: 'Artist' },
+      { id: 'en-3', title: 'River', artist: 'Artist' }
+    ];
+
+    const question = engine.startNextRound('ROOM42', cyrillicTracks, optionPool, 10_000, 1000);
+
+    expect(question.options).toHaveLength(4);
+    expect(question.options.every((option) => /[А-Яа-яЁё]/.test(option.title))).toBe(true);
+  });
+
   it('scores a fast correct answer higher than a slow correct answer', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
