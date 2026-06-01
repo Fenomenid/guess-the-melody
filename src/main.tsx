@@ -515,17 +515,23 @@ function Lobby({
   }
 
   function toggleTheme(themeId: string) {
-    const currentThemeIds = room.settings.themeIds?.length ? room.settings.themeIds : [room.settings.themeId];
+    const currentThemeIds = selectedThemeIds;
     const nextThemeIds = currentThemeIds.includes(themeId)
       ? currentThemeIds.filter((id) => id !== themeId)
       : [...currentThemeIds, themeId];
+    const playlistUrl = playlistDraft.trim();
+    const hasPlaylistSource = Boolean(playlistUrl || room.settings.playlistUrl);
 
-    if (nextThemeIds.length > 0) {
-      onSettingsChange({ themeIds: nextThemeIds });
+    if (nextThemeIds.length > 0 || hasPlaylistSource) {
+      onSettingsChange({
+        themeIds: nextThemeIds,
+        ...(playlistUrl && playlistUrl !== (room.settings.playlistUrl ?? '') ? { playlistUrl } : {})
+      });
     }
   }
 
-  const selectedThemeIds = room.settings.themeIds?.length ? room.settings.themeIds : [room.settings.themeId];
+  const selectedThemeIds = room.settings.themeIds ?? [room.settings.themeId];
+  const hasPlaylistSource = Boolean(playlistDraft.trim() || room.settings.playlistUrl);
 
   return (
     <div className="stage lobby-stage">
@@ -544,7 +550,7 @@ function Lobby({
               <label className="theme-choice" key={theme.id}>
                 <input
                   type="checkbox"
-                  disabled={!isHost || isBusy || (selectedThemeIds.length === 1 && selectedThemeIds.includes(theme.id))}
+                  disabled={!isHost || isBusy || (!hasPlaylistSource && selectedThemeIds.length === 1 && selectedThemeIds.includes(theme.id))}
                   checked={selectedThemeIds.includes(theme.id)}
                   onChange={() => toggleTheme(theme.id)}
                 />
@@ -624,7 +630,9 @@ function Lobby({
           <Radio size={18} />
           <span>
             {playlistDraft.trim()
-              ? 'Плейлист добавится к выбранным темам. Аудио проверяется только для нужного количества раундов.'
+              ? selectedThemeIds.length === 0
+                ? 'Плейлист будет единственным источником треков. Аудио проверяется только для нужного количества раундов.'
+                : 'Плейлист добавится к выбранным темам. Аудио проверяется только для нужного количества раундов.'
               : selectedThemeIds.length > 1
                 ? `Выбрано тем: ${selectedThemeIds.length}`
                 : themes.find((theme) => theme.id === selectedThemeIds[0])?.description ?? 'Треки подбираются из Яндекс Музыки'}

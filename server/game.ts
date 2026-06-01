@@ -93,12 +93,16 @@ export class GameEngine {
       throw new Error('Settings can only be changed in lobby');
     }
 
+    const playlistUrl = sanitizeOptionalUrl(settings.playlistUrl ?? room.settings.playlistUrl);
+    const requestedThemeIds = settings.themeIds ?? (settings.themeId ? [settings.themeId] : room.settings.themeIds ?? [room.settings.themeId]);
+    const themeIds = sanitizeThemeIds(requestedThemeIds, Boolean(playlistUrl));
+
     room.settings = {
       ...room.settings,
       ...settings,
-      themeIds: sanitizeThemeIds(settings.themeIds ?? room.settings.themeIds ?? [settings.themeId ?? room.settings.themeId]),
-      themeId: sanitizeThemeIds(settings.themeIds ?? room.settings.themeIds ?? [settings.themeId ?? room.settings.themeId])[0],
-      playlistUrl: sanitizeOptionalUrl(settings.playlistUrl ?? room.settings.playlistUrl),
+      themeIds,
+      themeId: themeIds[0] ?? room.settings.themeId ?? DEFAULT_SETTINGS.themeId,
+      playlistUrl,
       winCondition: settings.winCondition === 'score' ? 'score' : settings.winCondition === 'rounds' ? 'rounds' : room.settings.winCondition,
       rounds: clampInteger(settings.rounds ?? room.settings.rounds, 1, 20),
       targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 20_000),
@@ -404,9 +408,9 @@ function normalizeTitle(value: string): string {
   return value.trim().toLocaleLowerCase('ru').replace(/\s+/g, ' ');
 }
 
-function sanitizeThemeIds(value: string[] | undefined): string[] {
+function sanitizeThemeIds(value: string[] | undefined, allowEmpty = false): string[] {
   const ids = (value ?? []).filter((themeId): themeId is string => typeof themeId === 'string' && themeId.trim().length > 0);
-  return ids.length > 0 ? [...new Set(ids.map((themeId) => themeId.trim()))].slice(0, 6) : ['chart-russia'];
+  return ids.length > 0 ? [...new Set(ids.map((themeId) => themeId.trim()))].slice(0, 6) : allowEmpty ? [] : ['chart-russia'];
 }
 
 function sanitizeOptionalUrl(value: string | undefined): string | undefined {
@@ -418,13 +422,14 @@ function sanitizeOptionalUrl(value: string | undefined): string | undefined {
 }
 
 function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
-  const themeIds = sanitizeThemeIds(settings.themeIds ?? [settings.themeId ?? DEFAULT_SETTINGS.themeId]);
+  const playlistUrl = sanitizeOptionalUrl(settings.playlistUrl);
+  const themeIds = sanitizeThemeIds(settings.themeIds ?? [settings.themeId ?? DEFAULT_SETTINGS.themeId], Boolean(playlistUrl));
   return {
     ...DEFAULT_SETTINGS,
     ...settings,
     themeIds,
-    themeId: themeIds[0],
-    playlistUrl: sanitizeOptionalUrl(settings.playlistUrl),
+    themeId: themeIds[0] ?? settings.themeId ?? DEFAULT_SETTINGS.themeId,
+    playlistUrl,
     winCondition: settings.winCondition === 'score' ? 'score' : 'rounds',
     rounds: clampInteger(settings.rounds ?? DEFAULT_SETTINGS.rounds, 1, 20),
     targetScore: clampInteger(settings.targetScore ?? DEFAULT_SETTINGS.targetScore, 500, 20_000),

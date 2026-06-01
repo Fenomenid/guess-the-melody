@@ -229,8 +229,13 @@ export class MusicService {
   }
 
   async prepareTrackPool(source: TrackSourceInput, options: { playableLimit: number; optionLimit: number }): Promise<TrackPool> {
-    const themeIds = typeof source === 'string' ? [source] : source.themeIds?.length ? source.themeIds : ['chart-russia'];
     const playlistUrl = typeof source === 'string' ? undefined : source.playlistUrl;
+    const themeIds =
+      typeof source === 'string'
+        ? [source]
+        : source.themeIds && (source.themeIds.length > 0 || playlistUrl)
+          ? source.themeIds
+          : ['chart-russia'];
 
     if (this.forceDemo || themeIds.includes('demo-pop')) {
       return toDemoPool(false);

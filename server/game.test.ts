@@ -124,6 +124,35 @@ describe('GameEngine', () => {
     expect(revealed.status).toBe('finished');
   });
 
+  it('allows playlist-only settings when a playlist URL is configured', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+
+    const room = engine.updateSettings('ROOM42', {
+      playlistUrl: 'https://music.yandex.ru/users/example/playlists/1000',
+      themeIds: []
+    });
+
+    expect(room.settings.playlistUrl).toBe('https://music.yandex.ru/users/example/playlists/1000');
+    expect(room.settings.themeIds).toEqual([]);
+    expect(room.settings.themeId).toBe('chart-russia');
+  });
+
+  it('falls back to a default theme when playlist URL is cleared with no themes selected', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', {
+      playlistUrl: 'https://music.yandex.ru/users/example/playlists/1000',
+      themeIds: []
+    });
+
+    const room = engine.updateSettings('ROOM42', { playlistUrl: '', themeIds: [] });
+
+    expect(room.settings.playlistUrl).toBeUndefined();
+    expect(room.settings.themeIds).toEqual(['chart-russia']);
+    expect(room.settings.themeId).toBe('chart-russia');
+  });
+
   it('marks the room as preparing while tracks are loading', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
