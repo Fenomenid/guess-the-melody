@@ -70,6 +70,7 @@ export type RoomSettings = {
   playlistUrl?: string;
   playlistUrls?: string[];
   playlistSources?: PlaylistSource[];
+  difficulty: 'easy' | 'hard';
   winCondition: 'rounds' | 'score';
   rounds: number;
   targetScore: number;

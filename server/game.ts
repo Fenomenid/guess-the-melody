@@ -41,9 +41,10 @@ type PlayerInput = {
 
 const DEFAULT_SETTINGS: RoomSettings = {
   themeId: 'chart-russia',
-  themeIds: ['chart-russia'],
+  themeIds: [],
   playlistUrls: [],
   playlistSources: [],
+  difficulty: 'easy',
   winCondition: 'rounds',
   rounds: 5,
   targetScore: 3000,
@@ -97,6 +98,8 @@ export class GameEngine {
       throw new Error('Settings can only be changed in lobby');
     }
 
+    const playlistUpdateProvided = settings.playlistSources !== undefined || settings.playlistUrls !== undefined || settings.playlistUrl !== undefined;
+    const themeUpdateProvided = settings.themeIds !== undefined || settings.themeId !== undefined;
     const playlistSources = sanitizePlaylistSources(
       settings.playlistSources ??
         (settings.playlistUrls || settings.playlistUrl !== undefined
@@ -107,7 +110,8 @@ export class GameEngine {
     const playlistUrls = playlistSources.map((source) => source.url);
     const playlistUrl = playlistUrls[0];
     const requestedThemeIds = settings.themeIds ?? (settings.themeId ? [settings.themeId] : room.settings.themeIds ?? [room.settings.themeId]);
-    const themeIds = sanitizeThemeIds(requestedThemeIds, playlistUrls.length > 0);
+    const allowEmptyThemeIds = playlistUrls.length > 0 || (!playlistUpdateProvided && !themeUpdateProvided && room.settings.themeIds.length === 0);
+    const themeIds = sanitizeThemeIds(requestedThemeIds, allowEmptyThemeIds);
 
     room.settings = {
       ...room.settings,
@@ -117,6 +121,7 @@ export class GameEngine {
       playlistUrl,
       playlistUrls,
       playlistSources,
+      difficulty: settings.difficulty === 'hard' ? 'hard' : settings.difficulty === 'easy' ? 'easy' : room.settings.difficulty,
       winCondition: settings.winCondition === 'score' ? 'score' : settings.winCondition === 'rounds' ? 'rounds' : room.settings.winCondition,
       rounds: clampInteger(settings.rounds ?? room.settings.rounds, 1, 100),
       targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 200_000),
@@ -153,7 +158,7 @@ export class GameEngine {
 
     const available = tracks.filter((track) => !room.usedTrackIds.has(track.id));
     const correctPool = available.length > 0 ? available : tracks;
-    const correctTrack = shuffle(correctPool)[0];
+    const correctTrack = chooseCorrectTrack(correctPool, tracks, room.usedTrackIds);
     const freshDistractorPool = uniqueByTitle(optionTracks).filter(
       (track) => track.id !== correctTrack.id && normalizeTitle(track.title) !== normalizeTitle(correctTrack.title)
     );
@@ -498,6 +503,7 @@ function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
     playlistUrl,
     playlistUrls,
     playlistSources,
+    difficulty: settings.difficulty === 'hard' ? 'hard' : DEFAULT_SETTINGS.difficulty,
     winCondition: settings.winCondition === 'score' ? 'score' : 'rounds',
     rounds: clampInteger(settings.rounds ?? DEFAULT_SETTINGS.rounds, 1, 100),
     targetScore: clampInteger(settings.targetScore ?? DEFAULT_SETTINGS.targetScore, 500, 200_000),
@@ -519,6 +525,39 @@ function uniqueByTitle<T extends TrackMetadata>(tracks: T[]): T[] {
   }
 
   return unique;
+}
+
+function chooseCorrectTrack(candidates: Track[], allTracks: Track[], usedTrackIds: Set<string>): Track {
+  const sourceGroups = new Map<string, Track[]>();
+  for (const track of candidates) {
+    const key = trackSourceKey(track);
+    if (!key) {
+      continue;
+    }
+    sourceGroups.set(key, [...(sourceGroups.get(key) ?? []), track]);
+  }
+
+  if (sourceGroups.size < 2) {
+    return shuffle(candidates)[0];
+  }
+
+  const usedBySource = new Map<string, number>();
+  for (const track of allTracks) {
+    const key = trackSourceKey(track);
+    if (key && usedTrackIds.has(track.id)) {
+      usedBySource.set(key, (usedBySource.get(key) ?? 0) + 1);
+    }
+  }
+
+  const minUsed = Math.min(...[...sourceGroups.keys()].map((key) => usedBySource.get(key) ?? 0));
+  const balancedGroups = [...sourceGroups.entries()]
+    .filter(([key]) => (usedBySource.get(key) ?? 0) === minUsed)
+    .map(([, group]) => group);
+  return shuffle(shuffle(balancedGroups)[0])[0];
+}
+
+function trackSourceKey(track: TrackMetadata): string {
+  return track.sourceUrl || track.sourceName || '';
 }
 
 type TitleScriptBucket = 'cyrillic' | 'latin' | 'mixed' | 'unknown';

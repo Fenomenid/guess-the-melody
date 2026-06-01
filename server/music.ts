@@ -1,8 +1,10 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import type { PlaylistSource, Theme, Track, TrackMetadata } from './types';
 
 const YANDEX_API_BASE = 'https://api.music.yandex.net';
 const DOWNLOAD_SIGN_SALT = 'XGRlBW9FXlekgbPrRHuSiA';
+const GET_FILE_INFO_SECRET_KEY = '7tvSmFbyf5hJnIHhCimDDD';
+const GET_FILE_INFO_CODECS = ['flac', 'aac', 'he-aac', 'mp3', 'flac-mp4', 'aac-mp4', 'he-aac-mp4'];
 
 type YandexResponse<T> = {
   result?: T;
@@ -75,6 +77,17 @@ type DownloadInfo = {
   directLink?: string;
 };
 
+type GetFileInfoResult = {
+  downloadInfo?: {
+    trackId?: string;
+    quality?: string;
+    codec?: string;
+    transport?: string;
+    url?: string;
+    urls?: string[];
+  };
+};
+
 type ThemeConfig = Theme & {
   chartId?: 'russia' | 'world';
   metatagIds?: string[];
@@ -89,6 +102,7 @@ type TrackSourceInput =
       playlistUrl?: string;
       playlistUrls?: string[];
       playlistSources?: PlaylistSource[];
+      difficulty?: 'easy' | 'hard';
     };
 
 export type TrackPool = {
@@ -256,7 +270,7 @@ export class MusicService {
       const stats = createTrackLoadStats(candidates.length, optionTracks.length);
 
       for (const candidate of candidates) {
-        const audioUrl = await this.resolveAudioUrl(candidate, stats);
+        const audioUrl = await this.resolveAudioUrl(candidate, typeof source === 'string' ? 'easy' : source.difficulty ?? 'easy', stats);
         if (audioUrl) {
           playableTracks.push({
             ...toTrackMetadata(candidate),
@@ -301,7 +315,7 @@ export class MusicService {
     const results = [];
 
     for (const candidate of candidates.slice(0, limit)) {
-      const audioUrl = await this.resolveAudioUrl(candidate);
+      const audioUrl = await this.resolveAudioUrl(candidate, 'easy');
       results.push({
         id: String(candidate.id),
         title: candidate.title,
@@ -523,7 +537,15 @@ export class MusicService {
     return extractTracks(playlist.tracks).slice(0, 700);
   }
 
-  private async resolveAudioUrl(track: YandexTrack, stats?: TrackLoadStats): Promise<string | undefined> {
+  private async resolveAudioUrl(track: YandexTrack, difficulty: 'easy' | 'hard', stats?: TrackLoadStats): Promise<string | undefined> {
+    if (difficulty === 'hard') {
+      const fullTrackUrl = await this.tryDownloadInfoAudioUrl(track.id);
+      if (fullTrackUrl) {
+        if (stats) stats.fullTrackFallbacks += 1;
+        return fullTrackUrl;
+      }
+    }
+
     const trailerUrl = await this.tryTrailerAudioUrl(track, stats);
     if (trailerUrl) {
       return trailerUrl;
@@ -563,7 +585,7 @@ export class MusicService {
       }
 
       if (stats) stats.trailerTracks += 1;
-      const trailerAudioUrl = await this.tryDownloadInfoAudioUrl(trailerTrackId as string | number);
+      const trailerAudioUrl = await this.trySmartPreviewAudioUrl(trailerTrackId as string | number) ?? await this.tryDownloadInfoAudioUrl(trailerTrackId as string | number);
       if (trailerAudioUrl && stats) stats.trailerAudioUrls += 1;
       return trailerAudioUrl;
     } catch {
@@ -592,6 +614,32 @@ export class MusicService {
     }
   }
 
+  private async trySmartPreviewAudioUrl(trackId: string | number): Promise<string | undefined> {
+    try {
+      const normalizedTrackId = String(trackId).split(':')[0];
+      const quality = 'smart_preview';
+      const transport = 'raw';
+      const ts = Math.floor(Date.now() / 1000);
+      const codecs = GET_FILE_INFO_CODECS.join('');
+      const sign = createHmac('sha256', GET_FILE_INFO_SECRET_KEY)
+        .update(`${ts}${normalizedTrackId}${quality}${codecs}${transport}`, 'utf8')
+        .digest('base64')
+        .slice(0, -1);
+      const params = new URLSearchParams({
+        ts: String(ts),
+        trackId: normalizedTrackId,
+        quality,
+        codecs: GET_FILE_INFO_CODECS.join(','),
+        transports: transport,
+        sign
+      });
+      const result = await this.getRaw<GetFileInfoResult>(`/get-file-info?${params}`);
+      return result.downloadInfo?.url ?? result.downloadInfo?.urls?.[0];
+    } catch {
+      return undefined;
+    }
+  }
+
   private async get<T>(path: string): Promise<T> {
     const response = await fetch(`${YANDEX_API_BASE}${path}`, {
       headers: this.headers()
@@ -606,6 +654,18 @@ export class MusicService {
       throw new Error('Yandex Music response has no result');
     }
     return body.result;
+  }
+
+  private async getRaw<T>(path: string): Promise<T> {
+    const response = await fetch(`${YANDEX_API_BASE}${path}`, {
+      headers: this.headers()
+    });
+
+    if (!response.ok) {
+      throw new Error(`Yandex Music request failed: ${response.status}`);
+    }
+
+    return (await response.json()) as T;
   }
 
   private headers(): Record<string, string> {

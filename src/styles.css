@@ -417,6 +417,50 @@ select:focus {
   grid-column: 1 / -1;
 }
 
+.difficulty-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.difficulty-toggle button {
+  min-height: 72px;
+  display: grid;
+  gap: 4px;
+  align-content: center;
+  justify-items: start;
+  border: 1px solid #c3b6a3;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #3b342a;
+  background: #ded4c4;
+  text-align: left;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.difficulty-toggle button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.difficulty-toggle button.active {
+  border-color: #477f75;
+  background: #d5e5df;
+  box-shadow: 0 0 0 3px rgba(71, 127, 117, 0.16);
+}
+
+.difficulty-toggle strong {
+  font-size: 16px;
+}
+
+.difficulty-toggle small {
+  color: #706754;
+  font-weight: 800;
+}
+
 .theme-picker {
   display: flex;
   flex-wrap: wrap;
@@ -1079,6 +1123,22 @@ select:focus {
   border-color: #334860;
 }
 
+:root[data-theme="dark"] .difficulty-toggle button {
+  color: #dbe7f6;
+  background: #203044;
+  border-color: #334860;
+}
+
+:root[data-theme="dark"] .difficulty-toggle button.active {
+  border-color: #5fc4ef;
+  background: #173148;
+  box-shadow: 0 0 0 3px rgba(95, 196, 239, 0.14);
+}
+
+:root[data-theme="dark"] .difficulty-toggle small {
+  color: #9eb0c7;
+}
+
 :root[data-theme="dark"] .theme-choice {
   color: #dbe7f6;
   background: #203044;
@@ -1314,6 +1374,7 @@ select:focus {
   }
 
   .settings-grid,
+  .difficulty-toggle,
   .playlist-input-grid,
   .answers,
   .music-visual {

@@ -60,6 +60,7 @@ type Room = {
     playlistUrl?: string;
     playlistUrls?: string[];
     playlistSources?: PlaylistSource[];
+    difficulty: 'easy' | 'hard';
     winCondition: 'rounds' | 'score';
     rounds: number;
     targetScore: number;
@@ -585,20 +586,27 @@ function Lobby({
         <details className="settings-section" open>
           <summary>Настройки игры</summary>
           <div className="settings-grid">
-        <label className="field">
-          <span>Тема</span>
-          <div className="theme-picker">
-            {themes.map((theme) => (
-              <label className="theme-choice" key={theme.id}>
-                <input
-                  type="checkbox"
-                  disabled={!isHost || isBusy || (!hasPlaylistSource && selectedThemeIds.length === 1 && selectedThemeIds.includes(theme.id))}
-                  checked={selectedThemeIds.includes(theme.id)}
-                  onChange={() => toggleTheme(theme.id)}
-                />
-                <span>{theme.title}</span>
-              </label>
-            ))}
+        <label className="field wide-field">
+          <span>Сложность</span>
+          <div className="difficulty-toggle" role="group" aria-label="Сложность">
+            <button
+              type="button"
+              className={room.settings.difficulty === 'easy' ? 'active' : ''}
+              disabled={!isHost || isBusy}
+              onClick={() => onSettingsChange({ difficulty: 'easy' })}
+            >
+              <strong>Легко</strong>
+              <small>Трейлеры треков</small>
+            </button>
+            <button
+              type="button"
+              className={room.settings.difficulty === 'hard' ? 'active' : ''}
+              disabled={!isHost || isBusy}
+              onClick={() => onSettingsChange({ difficulty: 'hard' })}
+            >
+              <strong>Сложно</strong>
+              <small>Треки с начала</small>
+            </button>
           </div>
         </label>
         <label className="field wide-field">
@@ -653,6 +661,22 @@ function Lobby({
               ))}
             </div>
           )}
+        </label>
+        <label className="field">
+          <span>Тема</span>
+          <div className="theme-picker">
+            {themes.map((theme) => (
+              <label className="theme-choice" key={theme.id}>
+                <input
+                  type="checkbox"
+                  disabled={!isHost || isBusy || (!hasPlaylistSource && selectedThemeIds.length === 1 && selectedThemeIds.includes(theme.id))}
+                  checked={selectedThemeIds.includes(theme.id)}
+                  onChange={() => toggleTheme(theme.id)}
+                />
+                <span>{theme.title}</span>
+              </label>
+            ))}
+          </div>
         </label>
         <label className="field">
           <span>Условие победы</span>

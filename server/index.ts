@@ -103,7 +103,8 @@ io.on('connection', (socket) => {
         themeIds: preparingRoom.settings.themeIds,
         playlistSources: preparingRoom.settings.playlistSources,
         playlistUrls: preparingRoom.settings.playlistUrls,
-        playlistUrl: preparingRoom.settings.playlistUrl
+        playlistUrl: preparingRoom.settings.playlistUrl,
+        difficulty: preparingRoom.settings.difficulty
       };
       const shouldLoadInBackground = plannedRounds > BACKGROUND_POOL_ROUND_THRESHOLD;
       const loadToken = nextPoolLoadToken(preparingRoom.code);
@@ -213,7 +214,7 @@ async function bootstrap(): Promise<void> {
 async function hydrateRoomTrackPool(
   code: string,
   loadToken: number,
-  source: { themeIds: string[]; playlistSources?: RoomSettings['playlistSources']; playlistUrls?: string[]; playlistUrl?: string },
+  source: { themeIds: string[]; playlistSources?: RoomSettings['playlistSources']; playlistUrls?: string[]; playlistUrl?: string; difficulty?: RoomSettings['difficulty'] },
   plannedRounds: number
 ): Promise<void> {
   try {
@@ -325,6 +326,7 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
           .filter((item): item is { url: string; name?: string } => Boolean(item) && typeof item === 'object' && typeof (item as { url?: unknown }).url === 'string')
           .map((item) => ({ url: item.url, name: typeof item.name === 'string' ? item.name : '' }))
       : undefined,
+    difficulty: raw.difficulty === 'hard' || raw.difficulty === 'easy' ? raw.difficulty : undefined,
     winCondition: raw.winCondition === 'score' || raw.winCondition === 'rounds' ? raw.winCondition : undefined,
     rounds: typeof raw.rounds === 'number' ? raw.rounds : undefined,
     targetScore: typeof raw.targetScore === 'number' ? raw.targetScore : undefined,

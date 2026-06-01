@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GameEngine } from './game';
 import type { Track } from './types';
 
@@ -17,6 +17,7 @@ describe('GameEngine', () => {
     expect(room.code).toMatch(/^[A-Z0-9]{6}$/);
     expect(room.players).toHaveLength(1);
     expect(room.players[0]).toMatchObject({ id: 'p1', isHost: true, connected: true });
+    expect(room.settings.themeIds).toEqual([]);
   });
 
   it('starts a round with four answer options and no public correct answer', () => {
@@ -149,6 +150,27 @@ describe('GameEngine', () => {
     expect(room.settings.targetScore).toBe(200_000);
   });
 
+  it('stores the selected difficulty in room settings', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+
+    const hardRoom = engine.updateSettings('ROOM42', { difficulty: 'hard' });
+    const easyRoom = engine.updateSettings('ROOM42', { difficulty: 'easy' });
+
+    expect(hardRoom.settings.difficulty).toBe('hard');
+    expect(easyRoom.settings.difficulty).toBe('easy');
+  });
+
+  it('keeps the default empty theme selection when unrelated settings change', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+
+    const room = engine.updateSettings('ROOM42', { rounds: 12 });
+
+    expect(room.settings.rounds).toBe(12);
+    expect(room.settings.themeIds).toEqual([]);
+  });
+
   it('allows playlist-only settings when a playlist URL is configured', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
@@ -263,6 +285,34 @@ describe('GameEngine', () => {
       playedTrackIds.add(question.correctTrack.id);
       engine.revealRound('ROOM42');
     }
+  });
+
+  it('balances correct tracks between playlist sources while both have fresh tracks', () => {
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    const sourcedTracks: Track[] = Array.from({ length: 12 }, (_, index) => ({
+      id: `track-${index}`,
+      title: `Song ${index}`,
+      artist: 'Artist',
+      audioUrl: `https://example.test/${index}.mp3`,
+      sourceName: index < 6 ? 'Плейлист 1' : 'Плейлист 2',
+      sourceUrl: index < 6 ? 'https://music.yandex.ru/users/example/playlists/1' : 'https://music.yandex.ru/users/example/playlists/2'
+    }));
+    const counts = new Map<string, number>();
+
+    try {
+      for (let index = 0; index < 4; index += 1) {
+        const question = engine.startNextRound('ROOM42', sourcedTracks, 10_000, 1000 + index);
+        const sourceName = question.correctTrack.sourceName!;
+        counts.set(sourceName, (counts.get(sourceName) ?? 0) + 1);
+        engine.revealRound('ROOM42');
+      }
+    } finally {
+      randomSpy.mockRestore();
+    }
+
+    expect(Math.abs((counts.get('Плейлист 1') ?? 0) - (counts.get('Плейлист 2') ?? 0))).toBeLessThanOrEqual(1);
   });
 
   it('keeps the room track history after returning to lobby', () => {
