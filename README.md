@@ -11,6 +11,7 @@ Web party game for guessing songs in shared rooms with Yandex Music sources.
 - Optional answer changing until the round ends.
 - Automatic next round start after the result screen.
 - Round results and a final podium page.
+- Long games start from a small playable pool and continue loading more tracks in the background.
 
 ## Local Development
 

@@ -28,6 +28,11 @@ const roomTracks = new Map<string, Track[]>();
 const roomOptionTracks = new Map<string, TrackMetadata[]>();
 const roundTimers = new Map<string, NodeJS.Timeout>();
 const nextRoundTimers = new Map<string, NodeJS.Timeout>();
+const roomPoolLoadTokens = new Map<string, number>();
+
+const BACKGROUND_POOL_ROUND_THRESHOLD = 24;
+const INITIAL_PLAYABLE_LIMIT = 16;
+const INITIAL_OPTION_LIMIT = 160;
 
 app.use(cors({ origin: clientOrigin }));
 app.use(express.json({ limit: '16kb' }));
@@ -94,20 +99,26 @@ io.on('connection', (socket) => {
       io.to(preparingRoom.code).emit('room_state', preparingRoom);
 
       const plannedRounds = preparingRoom.settings.winCondition === 'score' ? estimateRoundsForScore(preparingRoom.settings.targetScore) : preparingRoom.settings.rounds;
+      const source = {
+        themeIds: preparingRoom.settings.themeIds,
+        playlistUrls: preparingRoom.settings.playlistUrls,
+        playlistUrl: preparingRoom.settings.playlistUrl
+      };
+      const shouldLoadInBackground = plannedRounds > BACKGROUND_POOL_ROUND_THRESHOLD;
+      const loadToken = nextPoolLoadToken(preparingRoom.code);
       const pool = await music.prepareTrackPool(
+        source,
         {
-          themeIds: preparingRoom.settings.themeIds,
-          playlistUrls: preparingRoom.settings.playlistUrls,
-          playlistUrl: preparingRoom.settings.playlistUrl
-        },
-        {
-          playableLimit: Math.max(12, plannedRounds + 20),
-          optionLimit: Math.max(220, plannedRounds * 18)
+          playableLimit: shouldLoadInBackground ? INITIAL_PLAYABLE_LIMIT : Math.max(12, plannedRounds + 20),
+          optionLimit: shouldLoadInBackground ? INITIAL_OPTION_LIMIT : Math.max(220, plannedRounds * 18)
         }
       );
       roomTracks.set(preparingRoom.code, shuffle(pool.playableTracks));
       roomOptionTracks.set(preparingRoom.code, shuffle(pool.optionTracks));
       await startRound(preparingRoom.code);
+      if (shouldLoadInBackground) {
+        void hydrateRoomTrackPool(preparingRoom.code, loadToken, source, plannedRounds);
+      }
       callback?.({ data: engine.getPublicRoom(preparingRoom.code) });
     } catch (error) {
       callback?.({ error: toClientError(error) });
@@ -152,6 +163,7 @@ io.on('connection', (socket) => {
         roomOptionTracks.delete(result.deletedRoomCode);
         clearRoundTimer(result.deletedRoomCode);
         clearNextRoundTimer(result.deletedRoomCode);
+        roomPoolLoadTokens.delete(result.deletedRoomCode);
       }
     } catch (error) {
       callback?.({ error: toClientError(error) });
@@ -174,6 +186,7 @@ io.on('connection', (socket) => {
       const room = engine.resetToLobby(code);
       roomTracks.delete(room.code);
       roomOptionTracks.delete(room.code);
+      nextPoolLoadToken(room.code);
       await persistRooms();
       callback?.({ data: room });
       io.to(room.code).emit('room_state', room);
@@ -194,6 +207,36 @@ async function bootstrap(): Promise<void> {
   httpServer.listen(port, host, () => {
     console.log(`Server listening on http://${host}:${port}`);
   });
+}
+
+async function hydrateRoomTrackPool(
+  code: string,
+  loadToken: number,
+  source: { themeIds: string[]; playlistUrls?: string[]; playlistUrl?: string },
+  plannedRounds: number
+): Promise<void> {
+  try {
+    const pool = await music.prepareTrackPool(source, {
+      playableLimit: Math.max(INITIAL_PLAYABLE_LIMIT, plannedRounds + 30),
+      optionLimit: Math.max(260, plannedRounds * 18)
+    });
+    if (pool.isFallback) {
+      console.warn(`[music] background pool load for ${code.toUpperCase()} returned fallback; keeping current room pool`);
+      return;
+    }
+    const room = engine.getPublicRoom(code);
+    if (room.status === 'lobby' || roomPoolLoadTokens.get(room.code) !== loadToken) {
+      return;
+    }
+
+    const currentTracks = roomTracks.get(room.code) ?? [];
+    const currentOptions = roomOptionTracks.get(room.code) ?? [];
+    roomTracks.set(room.code, shuffle(mergeUniqueById(currentTracks, pool.playableTracks)));
+    roomOptionTracks.set(room.code, shuffle(mergeUniqueByTitle(currentOptions, pool.optionTracks)));
+    console.log(`[music] hydrated room ${room.code}: ${roomTracks.get(room.code)?.length ?? 0} playable tracks`);
+  } catch (error) {
+    console.warn(`[music] background pool load failed for ${code.toUpperCase()}: ${toClientError(error)}`);
+  }
 }
 
 async function startRound(code: string): Promise<void> {
@@ -258,6 +301,13 @@ function clearNextRoundTimer(code: string): void {
   }
 }
 
+function nextPoolLoadToken(code: string): number {
+  const normalizedCode = code.toUpperCase();
+  const token = (roomPoolLoadTokens.get(normalizedCode) ?? 0) + 1;
+  roomPoolLoadTokens.set(normalizedCode, token);
+  return token;
+}
+
 function parseSettings(value: unknown): Partial<RoomSettings> {
   if (!value || typeof value !== 'object') {
     return {};
@@ -300,4 +350,33 @@ function shuffle<T>(items: T[]): T[] {
     [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
   }
   return result;
+}
+
+function mergeUniqueById<T extends { id: string }>(current: T[], incoming: T[]): T[] {
+  const seen = new Set(current.map((item) => item.id));
+  const merged = [...current];
+  for (const item of incoming) {
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      merged.push(item);
+    }
+  }
+  return merged;
+}
+
+function mergeUniqueByTitle<T extends { title: string }>(current: T[], incoming: T[]): T[] {
+  const seen = new Set(current.map((item) => normalizeTitle(item.title)));
+  const merged = [...current];
+  for (const item of incoming) {
+    const key = normalizeTitle(item.title);
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(item);
+    }
+  }
+  return merged;
+}
+
+function normalizeTitle(value: string): string {
+  return value.trim().toLocaleLowerCase('ru').replace(/\s+/g, ' ');
 }
