@@ -1,6 +1,16 @@
 # Guess the Melody
 
-Web party game for guessing songs in shared rooms.
+Web party game for guessing songs in shared rooms with Yandex Music sources.
+
+## Features
+
+- Shared rooms without registration.
+- Yandex Music themes, charts, playlists, and album links.
+- Up to 100 rounds or a target score up to 200000.
+- Up to 10 custom playlist/album links per game.
+- Optional answer changing until the round ends.
+- Automatic next round start after the result screen.
+- Round results and a final podium page.
 
 ## Local Development
 
@@ -63,3 +73,17 @@ YANDEX_MUSIC_TOKEN=...
 ```
 
 Upstash Redis is only for keeping rooms after a free Render instance sleeps. It does not affect Yandex Music availability.
+
+## Music Sources
+
+In the lobby, the host can combine built-in themes with custom Yandex Music links.
+
+Supported custom links:
+
+- `https://music.yandex.ru/users/<user>/playlists/<id>`
+- `https://music.yandex.ru/playlists/<uuid>`
+- `https://music.yandex.ru/album/<id>`
+
+When several links are added, the server mixes candidate tracks across sources before selecting playable previews, so one large playlist should not dominate smaller ones. If one source fails, the server logs it and continues with the remaining sources.
+
+If a round starts but the browser does not play audio, use the on-screen retry button. Browser autoplay rules or an expired remote audio URL can still block playback for an individual client.

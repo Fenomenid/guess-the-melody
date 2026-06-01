@@ -58,6 +58,7 @@ type Room = {
     rounds: number;
     targetScore: number;
     questionDurationMs: number;
+    allowAnswerChange: boolean;
   };
   players: Player[];
   currentQuestion?: {
@@ -234,7 +235,7 @@ function App() {
   }
 
   function submitAnswer(optionId: string) {
-    if (!room || me?.lastAnswer) return;
+    if (!room || (me?.lastAnswer && !room.settings.allowAnswerChange)) return;
     emit('submit_answer', { code: room.code, playerId, optionId }, undefined, 'Фиксируем ответ');
   }
 
@@ -396,7 +397,12 @@ function App() {
           </div>
           <div className="players">
             {sortedPlayers.map((player, index) => (
-              <div className={['player-row', player.id === playerId ? 'self' : '', !player.connected ? 'offline' : ''].filter(Boolean).join(' ')} key={player.id}>
+              <div
+                className={['player-row', player.id === playerId ? 'self' : '', player.lastAnswer ? 'answered' : '', !player.connected ? 'offline' : '']
+                  .filter(Boolean)
+                  .join(' ')}
+                key={player.id}
+              >
                 <div>
                   <strong className="player-name">
                     {index + 1}. {player.name}
@@ -484,7 +490,7 @@ function Lobby({
 
   function commitRounds() {
     const value = Number(roundsDraft);
-    const rounds = Number.isFinite(value) ? Math.max(1, Math.min(20, Math.round(value))) : room.settings.rounds;
+    const rounds = Number.isFinite(value) ? Math.max(1, Math.min(100, Math.round(value))) : room.settings.rounds;
     setRoundsDraft(String(rounds));
     if (rounds !== room.settings.rounds) {
       onSettingsChange({ rounds });
@@ -502,7 +508,7 @@ function Lobby({
 
   function commitTargetScore() {
     const value = Number(targetScoreDraft);
-    const targetScore = Number.isFinite(value) ? Math.max(500, Math.min(20_000, Math.round(value))) : room.settings.targetScore;
+    const targetScore = Number.isFinite(value) ? Math.max(500, Math.min(200_000, Math.round(value))) : room.settings.targetScore;
     setTargetScoreDraft(String(targetScore));
     if (targetScore !== room.settings.targetScore) {
       onSettingsChange({ targetScore });
@@ -515,7 +521,7 @@ function Lobby({
       setPlaylistDraft('');
       return;
     }
-    const playlistUrls = [...selectedPlaylistUrls, playlistUrl].slice(0, 8);
+    const playlistUrls = [...selectedPlaylistUrls, playlistUrl].slice(0, 10);
     onSettingsChange({ playlistUrls, playlistUrl: playlistUrls[0] });
     setPlaylistDraft('');
   }
@@ -531,7 +537,7 @@ function Lobby({
       ? currentThemeIds.filter((id) => id !== themeId)
       : [...currentThemeIds, themeId];
     const playlistUrl = playlistDraft.trim();
-    const nextPlaylistUrls = playlistUrl && !selectedPlaylistUrls.includes(playlistUrl) ? [...selectedPlaylistUrls, playlistUrl].slice(0, 8) : selectedPlaylistUrls;
+    const nextPlaylistUrls = playlistUrl && !selectedPlaylistUrls.includes(playlistUrl) ? [...selectedPlaylistUrls, playlistUrl].slice(0, 10) : selectedPlaylistUrls;
     const hasPlaylistSource = nextPlaylistUrls.length > 0;
 
     if (nextThemeIds.length > 0 || hasPlaylistSource) {
@@ -579,7 +585,7 @@ function Lobby({
           <span>Плейлисты</span>
           <div className="playlist-input-row">
             <input
-              disabled={!isHost || isBusy || selectedPlaylistUrls.length >= 8}
+              disabled={!isHost || isBusy || selectedPlaylistUrls.length >= 10}
               value={playlistDraft}
               onChange={(event) => setPlaylistDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -588,7 +594,7 @@ function Lobby({
                   addPlaylistUrl();
                 }
               }}
-              placeholder="https://music.yandex.ru/users/.../playlists/..."
+              placeholder="Ссылка на плейлист или альбом Яндекс Музыки"
             />
             <button className="secondary icon-only" type="button" disabled={!isHost || isBusy || !playlistDraft.trim()} onClick={addPlaylistUrl} aria-label="Добавить плейлист">
               <Plus size={18} />
@@ -630,7 +636,7 @@ function Lobby({
           <input
             type="number"
             min={1}
-            max={20}
+            max={100}
             disabled={!isHost || isBusy}
             value={roundsDraft}
             onBlur={commitRounds}
@@ -664,12 +670,24 @@ function Lobby({
           <input
             type="number"
             min={500}
-            max={20000}
+            max={200000}
             disabled={!isHost || isBusy || room.settings.winCondition !== 'score'}
             value={targetScoreDraft}
             onBlur={commitTargetScore}
             onChange={(event) => setTargetScoreDraft(event.target.value)}
           />
+        </label>
+        <label className="setting-toggle wide-field">
+          <input
+            type="checkbox"
+            disabled={!isHost || isBusy}
+            checked={room.settings.allowAnswerChange}
+            onChange={(event) => onSettingsChange({ allowAnswerChange: event.target.checked })}
+          />
+          <span>
+            <strong>Можно менять ответ</strong>
+            <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
+          </span>
         </label>
         <div className="notice">
           <Radio size={18} />
@@ -730,14 +748,32 @@ function QuestionStage({
 }) {
   const question = room.currentQuestion!;
   const countdown = useQuestionCountdown(question, room.serverTime);
+  const [audioIssue, setAudioIssue] = useState('');
+  const levels = useAudioLevels(audioRef, question.id);
+
+  function playAudio() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    setAudioIssue('');
+    void audio.play().catch(() => setAudioIssue('Браузер не запустил звук автоматически. Нажмите повторить.'));
+  }
+
+  useEffect(() => {
+    setAudioIssue('');
+    const timeout = window.setTimeout(playAudio, 150);
+    return () => window.clearTimeout(timeout);
+  }, [question.id]);
 
   return (
     <div className="stage question-stage">
       <audio
         ref={audioRef}
-        key={question.id}
         src={question.audioUrl}
+        preload="auto"
         autoPlay
+        onCanPlay={playAudio}
+        onError={() => setAudioIssue('Не удалось воспроизвести этот отрывок. Сервер попробует другой трек в следующем раунде.')}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
         }}
@@ -756,8 +792,17 @@ function QuestionStage({
           <strong>{countdown.secondsLeft}</strong>
           <span>сек</span>
         </div>
-        <Equalizer />
+        <Equalizer levels={levels} />
       </div>
+      {audioIssue && (
+        <div className="notice audio-notice">
+          <VolumeX size={18} />
+          <span>{audioIssue}</span>
+          <button className="secondary" type="button" onClick={playAudio}>
+            Повторить
+          </button>
+        </div>
+      )}
 
       <div className="answers">
         {question.options.map((option) => (
@@ -765,13 +810,13 @@ function QuestionStage({
             className={[
               'answer-button',
               me?.lastAnswer?.optionId === option.id ? 'selected-answer' : '',
-              me?.lastAnswer ? 'locked-answer' : ''
+              me?.lastAnswer && !room.settings.allowAnswerChange ? 'locked-answer' : ''
             ]
               .filter(Boolean)
               .join(' ')}
             key={option.id}
             onClick={() => onSubmit(option.id)}
-            disabled={Boolean(me?.lastAnswer)}
+            disabled={Boolean(me?.lastAnswer && !room.settings.allowAnswerChange)}
           >
             {option.title}
             {me?.lastAnswer?.optionId === option.id && <span className="answer-picked">Ваш ответ</span>}
@@ -782,16 +827,22 @@ function QuestionStage({
   );
 }
 
-function ResultStage({ room, isHost, emit }: { room: Room; isHost: boolean; emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void }) {
+function ResultStage({ room, emit }: { room: Room; isHost: boolean; emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void }) {
+  const nextRoundCountdown = useAutoNextCountdown(room.status, room.round);
+
   function selectedOptionTitle(player: Player): string {
     const optionId = player.lastAnswer?.optionId;
     return room.currentQuestion?.options.find((option) => option.id === optionId)?.title ?? 'Не ответил';
   }
 
+  if (room.status === 'finished') {
+    return <FinalStage room={room} emit={emit} selectedOptionTitle={selectedOptionTitle} />;
+  }
+
   return (
     <div className="stage result-stage">
-      <p className="eyebrow">{room.status === 'finished' ? 'Финал' : 'Ответ'}</p>
-      <h2>{room.status === 'finished' ? 'Игра окончена' : 'Раунд завершен'}</h2>
+      <p className="eyebrow">Ответ</p>
+      <h2>Раунд завершен</h2>
       {room.correctTrack && (
         <div className="solution">
           <Music2 size={24} />
@@ -812,29 +863,79 @@ function ResultStage({ room, isHost, emit }: { room: Room; isHost: boolean; emit
               </small>
             </strong>
             {player.lastAnswer?.points ? <b className="score-pop">+{player.lastAnswer.points}</b> : <small>0</small>}
-            {room.status === 'finished' && <em>{player.score}</em>}
           </div>
         ))}
       </div>
       <div className="actions">
-        {isHost && room.status === 'round-result' && (
-          <button className="primary" onClick={() => emit('next_round', { code: room.code }, undefined, 'Готовим следующий трек')}>
-            <Play size={18} />
-            Следующий раунд
-          </button>
-        )}
-        {isHost && room.status === 'finished' && (
-          <button className="primary" onClick={() => emit('reset_game', { code: room.code }, undefined, 'Возвращаем в лобби')}>
-            <RotateCcw size={18} />
-            Новая игра
-          </button>
-        )}
-        {room.status === 'finished' && (
-          <div className="notice winner">
-            <Trophy size={18} />
-            <span>Победитель: {room.players[0]?.name ?? 'игрок'}</span>
+        <button className="primary" onClick={() => emit('next_round', { code: room.code }, undefined, 'Готовим следующий трек')}>
+          <Play size={18} />
+          Следующий раунд
+        </button>
+        {nextRoundCountdown > 0 && (
+          <div className="notice auto-next">
+            <Timer size={18} />
+            <span>Следующий раунд начнется автоматически через {nextRoundCountdown} сек.</span>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function FinalStage({
+  room,
+  emit,
+  selectedOptionTitle
+}: {
+  room: Room;
+  emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void;
+  selectedOptionTitle: (player: Player) => string;
+}) {
+  const podium = [room.players[1], room.players[0], room.players[2]].filter(Boolean);
+
+  return (
+    <div className="stage final-stage">
+      <div className="fireworks" aria-hidden="true">
+        {Array.from({ length: 18 }, (_, index) => (
+          <span key={index} style={{ '--x': `${(index * 37) % 100}%`, '--delay': `${(index % 6) * 160}ms` } as React.CSSProperties} />
+        ))}
+      </div>
+      <p className="eyebrow">Финал</p>
+      <h2>Игра окончена</h2>
+      <div className="notice winner">
+        <Trophy size={18} />
+        <span>Победитель: {room.players[0]?.name ?? 'игрок'}</span>
+      </div>
+      <div className="podium">
+        {podium.map((player) => {
+          const place = room.players.findIndex((candidate) => candidate.id === player.id) + 1;
+          return (
+            <div className={`podium-place place-${place}`} key={player.id}>
+              <span>{place === 1 ? <Crown size={22} /> : place}</span>
+              <strong>{player.name}</strong>
+              <b>{player.score}</b>
+            </div>
+          );
+        })}
+      </div>
+      <div className="result-list final-list">
+        {room.players.map((player, index) => (
+          <div className="score-row" key={player.id}>
+            <span>{index === 0 ? <Crown size={18} /> : index + 1}</span>
+            <strong>
+              {player.name}
+              <small className={player.lastAnswer?.isCorrect ? 'answer-summary correct' : 'answer-summary'}>{selectedOptionTitle(player)}</small>
+            </strong>
+            <small>{player.lastAnswer?.points ? `+${player.lastAnswer.points}` : '0'}</small>
+            <em>{player.score}</em>
+          </div>
+        ))}
+      </div>
+      <div className="actions">
+        <button className="primary" onClick={() => emit('reset_game', { code: room.code }, undefined, 'Возвращаем в лобби')}>
+          <RotateCcw size={18} />
+          Новая игра
+        </button>
       </div>
     </div>
   );
@@ -888,14 +989,87 @@ function LoadingStrip({ label }: { label: string }) {
   );
 }
 
-function Equalizer() {
+function Equalizer({ levels }: { levels?: number[] }) {
+  const bars = levels?.length ? levels : Array.from({ length: 18 }, () => 0);
   return (
-    <div className="equalizer" aria-hidden="true">
-      {Array.from({ length: 18 }, (_, index) => (
-        <span key={index} style={{ '--delay': `${(index % 6) * 110}ms` } as React.CSSProperties} />
+    <div className={['equalizer', levels?.length ? 'live-equalizer' : ''].filter(Boolean).join(' ')} aria-hidden="true">
+      {bars.map((level, index) => (
+        <span
+          key={index}
+          style={
+            {
+              '--delay': `${(index % 6) * 110}ms`,
+              '--level': `${Math.max(18, Math.round(level * 100))}%`
+            } as React.CSSProperties
+          }
+        />
       ))}
     </div>
   );
+}
+
+function useAudioLevels(audioRef: React.MutableRefObject<HTMLAudioElement | null>, questionId: string): number[] {
+  const [levels, setLevels] = useState<number[]>([]);
+  const contextRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+
+  useEffect(() => {
+    let frame = 0;
+    const audio = audioRef.current;
+    if (!audio) {
+      setLevels([]);
+      return undefined;
+    }
+
+    try {
+      const AudioContextConstructor =
+        window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextConstructor) {
+        setLevels([]);
+        return undefined;
+      }
+
+      const context = contextRef.current ?? new AudioContextConstructor();
+      contextRef.current = context;
+      const analyser = analyserRef.current ?? context.createAnalyser();
+      analyser.fftSize = 64;
+      analyserRef.current = analyser;
+      const source = sourceRef.current ?? context.createMediaElementSource(audio);
+      if (!sourceRef.current) {
+        source.connect(analyser);
+        analyser.connect(context.destination);
+        sourceRef.current = source;
+      }
+      const data = new Uint8Array(analyser.frequencyBinCount);
+
+      const tick = () => {
+        analyser.getByteFrequencyData(data);
+        const bucketSize = Math.max(1, Math.floor(data.length / 18));
+        const nextLevels = Array.from({ length: 18 }, (_, index) => {
+          const start = index * bucketSize;
+          const bucket = data.slice(start, start + bucketSize);
+          const average = bucket.reduce((sum, value) => sum + value, 0) / Math.max(1, bucket.length);
+          return average / 255;
+        });
+        setLevels(nextLevels);
+        frame = window.requestAnimationFrame(tick);
+      };
+
+      void context.resume();
+      tick();
+    } catch {
+      setLevels([]);
+    }
+
+    return () => {
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, [audioRef, questionId]);
+
+  return levels;
 }
 
 function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, serverTime: number) {
@@ -914,6 +1088,28 @@ function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, se
     secondsLeft: Math.ceil(remaining / 1000),
     progress: remaining / question.durationMs
   };
+}
+
+function useAutoNextCountdown(status: Room['status'], round: number): number {
+  const [secondsLeft, setSecondsLeft] = useState(10);
+
+  useEffect(() => {
+    if (status !== 'round-result') {
+      setSecondsLeft(0);
+      return undefined;
+    }
+
+    const startedAt = Date.now();
+    setSecondsLeft(10);
+    const interval = window.setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      setSecondsLeft(Math.max(0, 10 - elapsed));
+    }, 250);
+
+    return () => window.clearInterval(interval);
+  }, [status, round]);
+
+  return secondsLeft;
 }
 
 createRoot(document.getElementById('root')!).render(

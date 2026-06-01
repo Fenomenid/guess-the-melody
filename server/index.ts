@@ -27,6 +27,7 @@ const roomStore = new RoomStore();
 const roomTracks = new Map<string, Track[]>();
 const roomOptionTracks = new Map<string, TrackMetadata[]>();
 const roundTimers = new Map<string, NodeJS.Timeout>();
+const nextRoundTimers = new Map<string, NodeJS.Timeout>();
 
 app.use(cors({ origin: clientOrigin }));
 app.use(express.json({ limit: '16kb' }));
@@ -100,8 +101,8 @@ io.on('connection', (socket) => {
           playlistUrl: preparingRoom.settings.playlistUrl
         },
         {
-          playableLimit: Math.max(12, plannedRounds + 10),
-          optionLimit: Math.max(180, plannedRounds * 18)
+          playableLimit: Math.max(12, plannedRounds + 20),
+          optionLimit: Math.max(220, plannedRounds * 18)
         }
       );
       roomTracks.set(preparingRoom.code, shuffle(pool.playableTracks));
@@ -150,6 +151,7 @@ io.on('connection', (socket) => {
         roomTracks.delete(result.deletedRoomCode);
         roomOptionTracks.delete(result.deletedRoomCode);
         clearRoundTimer(result.deletedRoomCode);
+        clearNextRoundTimer(result.deletedRoomCode);
       }
     } catch (error) {
       callback?.({ error: toClientError(error) });
@@ -168,6 +170,7 @@ io.on('connection', (socket) => {
   socket.on('reset_game', async ({ code }: { code: string }, callback) => {
     try {
       clearRoundTimer(code);
+      clearNextRoundTimer(code);
       const room = engine.resetToLobby(code);
       roomTracks.delete(room.code);
       roomOptionTracks.delete(room.code);
@@ -195,6 +198,7 @@ async function bootstrap(): Promise<void> {
 
 async function startRound(code: string): Promise<void> {
   clearRoundTimer(code);
+  clearNextRoundTimer(code);
   const room = engine.getPublicRoom(code);
   const tracks = roomTracks.get(room.code);
   const optionTracks = roomOptionTracks.get(room.code) ?? tracks;
@@ -213,10 +217,29 @@ async function startRound(code: string): Promise<void> {
     void persistRooms();
     io.to(room.code).emit('round_result', revealed);
     io.to(room.code).emit('room_state', revealed);
+    scheduleNextRound(revealed.code);
     roundTimers.delete(room.code);
   }, Math.max(0, (updated.currentQuestion?.endsAt ?? Date.now() + room.settings.questionDurationMs) - Date.now()));
 
   roundTimers.set(room.code, timer);
+}
+
+function scheduleNextRound(code: string): void {
+  clearNextRoundTimer(code);
+  const room = engine.getPublicRoom(code);
+  if (room.status !== 'round-result') {
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    nextRoundTimers.delete(room.code);
+    void startRound(room.code).catch((error) => {
+      io.to(room.code).emit('room_state', engine.getPublicRoom(room.code));
+      console.warn(toClientError(error));
+    });
+  }, 10_000);
+
+  nextRoundTimers.set(room.code, timer);
 }
 
 function clearRoundTimer(code: string): void {
@@ -224,6 +247,14 @@ function clearRoundTimer(code: string): void {
   if (timer) {
     clearTimeout(timer);
     roundTimers.delete(code.toUpperCase());
+  }
+}
+
+function clearNextRoundTimer(code: string): void {
+  const timer = nextRoundTimers.get(code.toUpperCase());
+  if (timer) {
+    clearTimeout(timer);
+    nextRoundTimers.delete(code.toUpperCase());
   }
 }
 
@@ -241,12 +272,13 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
     winCondition: raw.winCondition === 'score' || raw.winCondition === 'rounds' ? raw.winCondition : undefined,
     rounds: typeof raw.rounds === 'number' ? raw.rounds : undefined,
     targetScore: typeof raw.targetScore === 'number' ? raw.targetScore : undefined,
-    questionDurationMs: typeof raw.questionDurationMs === 'number' ? raw.questionDurationMs : undefined
+    questionDurationMs: typeof raw.questionDurationMs === 'number' ? raw.questionDurationMs : undefined,
+    allowAnswerChange: typeof raw.allowAnswerChange === 'boolean' ? raw.allowAnswerChange : undefined
   };
 }
 
 function estimateRoundsForScore(targetScore: number): number {
-  return Math.max(8, Math.min(24, Math.ceil(targetScore / 650) + 4));
+  return Math.max(8, Math.min(100, Math.ceil(targetScore / 650) + 4));
 }
 
 function toClientError(error: unknown): string {

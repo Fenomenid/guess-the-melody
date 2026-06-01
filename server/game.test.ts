@@ -124,6 +124,16 @@ describe('GameEngine', () => {
     expect(revealed.status).toBe('finished');
   });
 
+  it('allows longer games and higher score targets', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+
+    const room = engine.updateSettings('ROOM42', { rounds: 100, targetScore: 200_000 });
+
+    expect(room.settings.rounds).toBe(100);
+    expect(room.settings.targetScore).toBe(200_000);
+  });
+
   it('allows playlist-only settings when a playlist URL is configured', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
@@ -156,6 +166,18 @@ describe('GameEngine', () => {
     ]);
     expect(room.settings.playlistUrl).toBe('https://music.yandex.ru/users/example/playlists/1000');
     expect(room.settings.themeIds).toEqual([]);
+  });
+
+  it('keeps up to ten playlist or album URLs', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    const urls = Array.from({ length: 12 }, (_, index) => `https://music.yandex.ru/album/${1000 + index}`);
+
+    const room = engine.updateSettings('ROOM42', { playlistUrls: urls, themeIds: [] });
+
+    expect(room.settings.playlistUrls).toHaveLength(10);
+    expect(room.settings.playlistUrls?.at(0)).toBe('https://music.yandex.ru/album/1000');
+    expect(room.settings.playlistUrls?.at(-1)).toBe('https://music.yandex.ru/album/1009');
   });
 
   it('falls back to a default theme when playlist URL is cleared with no themes selected', () => {
@@ -229,5 +251,22 @@ describe('GameEngine', () => {
     expect(() => engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 3000)).toThrow(
       'Player already answered'
     );
+  });
+
+  it('allows changing an answer before reveal when enabled', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { allowAnswerChange: true });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    const wrongOption = question.options.find((option) => option.id !== question.correctOptionId)!;
+
+    const first = engine.submitAnswer('ROOM42', 'host', wrongOption.id, 2000);
+    const second = engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 3000);
+    const revealed = engine.revealRound('ROOM42');
+
+    expect(first.isCorrect).toBe(false);
+    expect(second.isCorrect).toBe(true);
+    expect(revealed.players[0].lastAnswer?.optionId).toBe(question.correctOptionId);
+    expect(revealed.players[0].score).toBe(second.points);
   });
 });

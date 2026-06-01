@@ -46,6 +46,10 @@ type MetatagPlaylistsResult = {
 
 type PlaylistResult = YandexPlaylist | { playlist?: YandexPlaylist };
 
+type AlbumResult = {
+  volumes?: Array<Array<YandexTrack | YandexTrackShort>>;
+};
+
 type StationTracksResult = {
   sequence?: Array<{ track?: YandexTrack }>;
 };
@@ -243,7 +247,7 @@ export class MusicService {
     }
 
     try {
-      const candidates = uniqueByTrackId(shuffle(await this.getSourceCandidates(themeIds, playlistUrls)));
+      const candidates = uniqueByTrackId(await this.getSourceCandidates(themeIds, playlistUrls));
       const optionTracks = uniqueByTitle(candidates.map(toTrackMetadata)).slice(0, options.optionLimit);
       const playableTracks: Track[] = [];
       const stats = createTrackLoadStats(candidates.length, optionTracks.length);
@@ -335,24 +339,28 @@ export class MusicService {
   }
 
   private async getSourceCandidates(themeIds: string[], playlistUrls: string[] = []): Promise<YandexTrack[]> {
-    const tracks: YandexTrack[] = [];
+    const sourceGroups: YandexTrack[][] = [];
 
     for (const playlistUrl of playlistUrls) {
-      tracks.push(...(await this.getPlaylistUrlCandidates(playlistUrl)));
-      if (tracks.length >= 260) {
-        break;
+      try {
+        const tracks = await this.getPlaylistUrlCandidates(playlistUrl);
+        if (tracks.length > 0) {
+          sourceGroups.push(shuffle(tracks));
+        }
+      } catch (error) {
+        console.warn(`[music] source ${playlistUrl} failed: ${toClientMessage(error)}`);
       }
     }
 
     for (const themeId of themeIds) {
       const theme = THEMES.find((candidate) => candidate.id === themeId) ?? THEMES[0];
-      tracks.push(...(await this.getThemeCandidates(theme)));
-      if (tracks.length >= 260) {
-        break;
+      const tracks = await this.getThemeCandidates(theme);
+      if (tracks.length > 0) {
+        sourceGroups.push(shuffle(tracks));
       }
     }
 
-    return uniqueByTrackId(tracks).slice(0, 260);
+    return uniqueByTrackId(interleaveSourceGroups(sourceGroups)).slice(0, 700);
   }
 
   private async getChartCandidates(chartId: 'russia' | 'world'): Promise<YandexTrack[]> {
@@ -492,12 +500,17 @@ export class MusicService {
     if (parsed.type === 'uuid') {
       const result = await this.get<PlaylistResult>(`/playlist/${parsed.uuid}`);
       const playlist: YandexPlaylist = isPlaylistEnvelope(result) ? result.playlist : (result as YandexPlaylist);
-      return extractTracks(playlist.tracks).slice(0, 260);
+      return extractTracks(playlist.tracks).slice(0, 700);
+    }
+
+    if (parsed.type === 'album') {
+      const result = await this.get<AlbumResult>(`/albums/${parsed.id}/with-tracks`);
+      return extractTracks(result.volumes?.flat()).slice(0, 700);
     }
 
     const result = await this.get<PlaylistResult>(`/users/${parsed.uid}/playlists/${parsed.kind}`);
     const playlist: YandexPlaylist = isPlaylistEnvelope(result) ? result.playlist : (result as YandexPlaylist);
-    return extractTracks(playlist.tracks).slice(0, 260);
+    return extractTracks(playlist.tracks).slice(0, 700);
   }
 
   private async resolveAudioUrl(track: YandexTrack, stats?: TrackLoadStats): Promise<string | undefined> {
@@ -663,7 +676,7 @@ function isPlaylistEnvelope(value: PlaylistResult): value is { playlist: YandexP
   return 'playlist' in value && Boolean(value.playlist);
 }
 
-type ParsedPlaylistUrl = { type: 'user'; uid: string; kind: string } | { type: 'uuid'; uuid: string };
+type ParsedPlaylistUrl = { type: 'user'; uid: string; kind: string } | { type: 'uuid'; uuid: string } | { type: 'album'; id: string };
 
 function parseYandexPlaylistUrl(value: string): ParsedPlaylistUrl | undefined {
   try {
@@ -671,6 +684,7 @@ function parseYandexPlaylistUrl(value: string): ParsedPlaylistUrl | undefined {
     const parts = url.pathname.split('/').filter(Boolean);
     const userIndex = parts.indexOf('users');
     const playlistIndex = parts.indexOf('playlists');
+    const albumIndex = parts.indexOf('album');
 
     if (userIndex >= 0 && playlistIndex === userIndex + 2 && parts[userIndex + 1] && parts[playlistIndex + 1]) {
       return {
@@ -684,6 +698,13 @@ function parseYandexPlaylistUrl(value: string): ParsedPlaylistUrl | undefined {
       return {
         type: 'uuid',
         uuid: decodeURIComponent(parts[playlistIndex + 1])
+      };
+    }
+
+    if (albumIndex >= 0 && parts[albumIndex + 1]) {
+      return {
+        type: 'album',
+        id: decodeURIComponent(parts[albumIndex + 1])
       };
     }
   } catch {
@@ -748,6 +769,20 @@ function shuffle<T>(items: T[]): T[] {
   for (let index = result.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function interleaveSourceGroups<T>(groups: T[][]): T[] {
+  const result: T[] = [];
+  const queues = groups.map((group) => [...group]);
+  while (queues.some((queue) => queue.length > 0)) {
+    for (const queue of queues) {
+      const item = queue.shift();
+      if (item) {
+        result.push(item);
+      }
+    }
   }
   return result;
 }

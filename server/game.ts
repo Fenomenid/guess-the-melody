@@ -45,7 +45,8 @@ const DEFAULT_SETTINGS: RoomSettings = {
   winCondition: 'rounds',
   rounds: 5,
   targetScore: 3000,
-  questionDurationMs: 15_000
+  questionDurationMs: 15_000,
+  allowAnswerChange: false
 };
 
 export class GameEngine {
@@ -110,9 +111,10 @@ export class GameEngine {
       playlistUrl,
       playlistUrls,
       winCondition: settings.winCondition === 'score' ? 'score' : settings.winCondition === 'rounds' ? 'rounds' : room.settings.winCondition,
-      rounds: clampInteger(settings.rounds ?? room.settings.rounds, 1, 20),
-      targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 20_000),
-      questionDurationMs: clampInteger(settings.questionDurationMs ?? room.settings.questionDurationMs, 5_000, 30_000)
+      rounds: clampInteger(settings.rounds ?? room.settings.rounds, 1, 100),
+      targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 200_000),
+      questionDurationMs: clampInteger(settings.questionDurationMs ?? room.settings.questionDurationMs, 5_000, 30_000),
+      allowAnswerChange: typeof settings.allowAnswerChange === 'boolean' ? settings.allowAnswerChange : room.settings.allowAnswerChange
     };
 
     return toPublicRoom(room);
@@ -202,7 +204,7 @@ export class GameEngine {
     if (!room.currentQuestion || room.status !== 'question') {
       throw new Error('No active question');
     }
-    if (player.lastAnswer) {
+    if (player.lastAnswer && !room.settings.allowAnswerChange) {
       throw new Error('Player already answered');
     }
 
@@ -431,7 +433,7 @@ function sanitizePlaylistUrls(value: string[] | undefined): string[] {
   const urls = (value ?? [])
     .map((url) => sanitizeOptionalUrl(url))
     .filter((url): url is string => Boolean(url));
-  return [...new Set(urls)].slice(0, 8);
+  return [...new Set(urls)].slice(0, 10);
 }
 
 function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
@@ -446,9 +448,10 @@ function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
     playlistUrl,
     playlistUrls,
     winCondition: settings.winCondition === 'score' ? 'score' : 'rounds',
-    rounds: clampInteger(settings.rounds ?? DEFAULT_SETTINGS.rounds, 1, 20),
-    targetScore: clampInteger(settings.targetScore ?? DEFAULT_SETTINGS.targetScore, 500, 20_000),
-    questionDurationMs: clampInteger(settings.questionDurationMs ?? DEFAULT_SETTINGS.questionDurationMs, 5_000, 30_000)
+    rounds: clampInteger(settings.rounds ?? DEFAULT_SETTINGS.rounds, 1, 100),
+    targetScore: clampInteger(settings.targetScore ?? DEFAULT_SETTINGS.targetScore, 500, 200_000),
+    questionDurationMs: clampInteger(settings.questionDurationMs ?? DEFAULT_SETTINGS.questionDurationMs, 5_000, 30_000),
+    allowAnswerChange: settings.allowAnswerChange ?? DEFAULT_SETTINGS.allowAnswerChange
   };
 }
 

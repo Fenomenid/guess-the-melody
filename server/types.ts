@@ -65,6 +65,7 @@ export type RoomSettings = {
   rounds: number;
   targetScore: number;
   questionDurationMs: number;
+  allowAnswerChange: boolean;
 };
 
 export type PublicRoom = {
