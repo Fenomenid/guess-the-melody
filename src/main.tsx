@@ -49,7 +49,11 @@ type Room = {
   status: 'lobby' | 'preparing' | 'question' | 'round-result' | 'finished';
   settings: {
     themeId: string;
+    themeIds: string[];
+    playlistUrl?: string;
+    winCondition: 'rounds' | 'score';
     rounds: number;
+    targetScore: number;
     questionDurationMs: number;
   };
   players: Player[];
@@ -61,6 +65,7 @@ type Room = {
     options: Array<{ id: string; title: string }>;
     durationMs: number;
     startedAt: number;
+    endsAt: number;
   };
   correctTrack?: {
     id: string;
@@ -69,6 +74,7 @@ type Room = {
     coverUrl?: string;
   };
   round: number;
+  serverTime: number;
 };
 
 type ConfirmDialogState = {
@@ -162,6 +168,18 @@ function App() {
       audioRef.current.volume = volume;
     }
   }, [volume]);
+
+  useEffect(() => {
+    if (room?.status !== 'lobby') {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void fetch('/api/health?keep=room', { cache: 'no-store' }).catch(() => undefined);
+    }, 240_000);
+
+    return () => window.clearInterval(interval);
+  }, [room?.code, room?.status]);
 
   function handleRoomState(nextRoom: Room) {
     setRoom(nextRoom);
@@ -451,12 +469,16 @@ function Lobby({
   onSettingsChange: (settings: Partial<Room['settings']>) => void;
 }) {
   const [roundsDraft, setRoundsDraft] = useState(String(room.settings.rounds));
+  const [targetScoreDraft, setTargetScoreDraft] = useState(String(room.settings.targetScore));
   const [secondsDraft, setSecondsDraft] = useState(String(room.settings.questionDurationMs / 1000));
+  const [playlistDraft, setPlaylistDraft] = useState(room.settings.playlistUrl ?? '');
 
   useEffect(() => {
     setRoundsDraft(String(room.settings.rounds));
+    setTargetScoreDraft(String(room.settings.targetScore));
     setSecondsDraft(String(room.settings.questionDurationMs / 1000));
-  }, [room.settings.rounds, room.settings.questionDurationMs]);
+    setPlaylistDraft(room.settings.playlistUrl ?? '');
+  }, [room.settings.rounds, room.settings.targetScore, room.settings.questionDurationMs, room.settings.playlistUrl]);
 
   function commitRounds() {
     const value = Number(roundsDraft);
@@ -476,6 +498,35 @@ function Lobby({
     }
   }
 
+  function commitTargetScore() {
+    const value = Number(targetScoreDraft);
+    const targetScore = Number.isFinite(value) ? Math.max(500, Math.min(20_000, Math.round(value))) : room.settings.targetScore;
+    setTargetScoreDraft(String(targetScore));
+    if (targetScore !== room.settings.targetScore) {
+      onSettingsChange({ targetScore });
+    }
+  }
+
+  function commitPlaylistUrl() {
+    const playlistUrl = playlistDraft.trim();
+    if ((room.settings.playlistUrl ?? '') !== playlistUrl) {
+      onSettingsChange({ playlistUrl });
+    }
+  }
+
+  function toggleTheme(themeId: string) {
+    const currentThemeIds = room.settings.themeIds?.length ? room.settings.themeIds : [room.settings.themeId];
+    const nextThemeIds = currentThemeIds.includes(themeId)
+      ? currentThemeIds.filter((id) => id !== themeId)
+      : [...currentThemeIds, themeId];
+
+    if (nextThemeIds.length > 0) {
+      onSettingsChange({ themeIds: nextThemeIds });
+    }
+  }
+
+  const selectedThemeIds = room.settings.themeIds?.length ? room.settings.themeIds : [room.settings.themeId];
+
   return (
     <div className="stage lobby-stage">
       <p className="eyebrow">Лобби</p>
@@ -485,12 +536,39 @@ function Lobby({
       <div className="settings-grid">
         <label className="field">
           <span>Тема</span>
-          <select disabled={!isHost || isBusy} value={room.settings.themeId} onChange={(event) => onSettingsChange({ themeId: event.target.value })}>
+          <div className="theme-picker">
             {themes.map((theme) => (
-              <option key={theme.id} value={theme.id}>
-                {theme.title}
-              </option>
+              <label className="theme-choice" key={theme.id}>
+                <input
+                  type="checkbox"
+                  disabled={!isHost || isBusy || (selectedThemeIds.length === 1 && selectedThemeIds.includes(theme.id))}
+                  checked={selectedThemeIds.includes(theme.id)}
+                  onChange={() => toggleTheme(theme.id)}
+                />
+                <span>{theme.title}</span>
+              </label>
             ))}
+          </div>
+        </label>
+        <label className="field">
+          <span>Плейлист</span>
+          <input
+            disabled={!isHost || isBusy}
+            value={playlistDraft}
+            onBlur={commitPlaylistUrl}
+            onChange={(event) => setPlaylistDraft(event.target.value)}
+            placeholder="https://music.yandex.ru/users/.../playlists/..."
+          />
+        </label>
+        <label className="field">
+          <span>Условие победы</span>
+          <select
+            disabled={!isHost || isBusy}
+            value={room.settings.winCondition}
+            onChange={(event) => onSettingsChange({ winCondition: event.target.value as Room['settings']['winCondition'] })}
+          >
+            <option value="rounds">По раундам</option>
+            <option value="score">По очкам</option>
           </select>
         </label>
         <label className="field">
@@ -527,9 +605,27 @@ function Lobby({
             }}
           />
         </label>
+        <label className="field">
+          <span>Очки для победы</span>
+          <input
+            type="number"
+            min={500}
+            max={20000}
+            disabled={!isHost || isBusy || room.settings.winCondition !== 'score'}
+            value={targetScoreDraft}
+            onBlur={commitTargetScore}
+            onChange={(event) => setTargetScoreDraft(event.target.value)}
+          />
+        </label>
         <div className="notice">
           <Radio size={18} />
-          <span>{themes.find((theme) => theme.id === room.settings.themeId)?.description ?? 'Треки подбираются из Яндекс Музыки'}</span>
+          <span>
+            {playlistDraft.trim()
+              ? 'Плейлист добавится к выбранным темам. Аудио проверяется только для нужного количества раундов.'
+              : selectedThemeIds.length > 1
+                ? `Выбрано тем: ${selectedThemeIds.length}`
+                : themes.find((theme) => theme.id === selectedThemeIds[0])?.description ?? 'Треки подбираются из Яндекс Музыки'}
+          </span>
         </div>
       </div>
 
@@ -575,7 +671,7 @@ function QuestionStage({
   onSubmit: (optionId: string) => void;
 }) {
   const question = room.currentQuestion!;
-  const countdown = useQuestionCountdown(question);
+  const countdown = useQuestionCountdown(question, room.serverTime);
 
   return (
     <div className="stage question-stage">
@@ -629,6 +725,11 @@ function QuestionStage({
 }
 
 function ResultStage({ room, isHost, emit }: { room: Room; isHost: boolean; emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void }) {
+  function selectedOptionTitle(player: Player): string {
+    const optionId = player.lastAnswer?.optionId;
+    return room.currentQuestion?.options.find((option) => option.id === optionId)?.title ?? 'Не ответил';
+  }
+
   return (
     <div className="stage result-stage">
       <p className="eyebrow">{room.status === 'finished' ? 'Финал' : 'Ответ'}</p>
@@ -646,9 +747,14 @@ function ResultStage({ room, isHost, emit }: { room: Room; isHost: boolean; emit
         {room.players.map((player, index) => (
           <div className="score-row" key={player.id}>
             <span>{index === 0 ? <Crown size={18} /> : index + 1}</span>
-            <strong>{player.name}</strong>
+            <strong>
+              {player.name}
+              <small className={player.lastAnswer?.isCorrect ? 'answer-summary correct' : 'answer-summary'}>
+                {selectedOptionTitle(player)}
+              </small>
+            </strong>
             {player.lastAnswer?.points ? <b className="score-pop">+{player.lastAnswer.points}</b> : <small>0</small>}
-            <em>{player.score}</em>
+            {room.status === 'finished' && <em>{player.score}</em>}
           </div>
         ))}
       </div>
@@ -734,16 +840,18 @@ function Equalizer() {
   );
 }
 
-function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>) {
+function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, serverTime: number) {
   const [now, setNow] = useState(Date.now());
+  const serverOffsetRef = useRef(0);
 
   useEffect(() => {
+    serverOffsetRef.current = serverTime - Date.now();
     const interval = window.setInterval(() => setNow(Date.now()), 50);
     return () => window.clearInterval(interval);
-  }, [question.id]);
+  }, [question.id, serverTime]);
 
-  const elapsed = Math.max(0, now - question.startedAt);
-  const remaining = Math.max(0, question.durationMs - elapsed);
+  const adjustedNow = now + serverOffsetRef.current;
+  const remaining = Math.max(0, question.endsAt - adjustedNow);
   return {
     secondsLeft: Math.ceil(remaining / 1000),
     progress: remaining / question.durationMs

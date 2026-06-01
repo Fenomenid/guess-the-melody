@@ -46,6 +46,10 @@ type MetatagPlaylistsResult = {
 
 type PlaylistResult = YandexPlaylist | { playlist?: YandexPlaylist };
 
+type StationTracksResult = {
+  sequence?: Array<{ track?: YandexTrack }>;
+};
+
 type TrackTrailerResult = {
   track?: YandexTrack;
 };
@@ -62,7 +66,15 @@ type DownloadInfo = {
 type ThemeConfig = Theme & {
   chartId?: 'russia' | 'world';
   metatagIds?: string[];
+  stationIds?: string[];
 };
+
+type TrackSourceInput =
+  | string
+  | {
+      themeIds?: string[];
+      playlistUrl?: string;
+    };
 
 export type TrackPool = {
   playableTracks: Track[];
@@ -98,6 +110,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Поп',
     description: 'Готовые поп-подборки Яндекс Музыки через метатеги',
     source: 'yandex',
+    stationIds: ['genre:pop'],
     metatagIds: ['pop', 'ruspop', 'russian-pop', 'foreign-pop']
   },
   {
@@ -105,6 +118,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Рок',
     description: 'Готовые рок-подборки Яндекс Музыки через метатеги',
     source: 'yandex',
+    stationIds: ['genre:allrock', 'genre:rock'],
     metatagIds: ['rock', 'rusrock', 'russian-rock', 'foreign-rock']
   },
   {
@@ -112,6 +126,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Рэп и хип-хоп',
     description: 'Готовые рэп и хип-хоп подборки Яндекс Музыки',
     source: 'yandex',
+    stationIds: ['genre:rap', 'genre:hiphop'],
     metatagIds: ['rap', 'hip-hop', 'rusrap', 'russian-rap']
   },
   {
@@ -119,6 +134,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Электроника',
     description: 'Электронные подборки и плейлисты Яндекс Музыки',
     source: 'yandex',
+    stationIds: ['genre:electronics', 'genre:electronic'],
     metatagIds: ['electronic', 'electronics', 'dance-electronic']
   },
   {
@@ -126,6 +142,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Танцевальная',
     description: 'Танцевальные подборки Яндекс Музыки',
     source: 'yandex',
+    stationIds: ['genre:dance'],
     metatagIds: ['dance', 'club', 'house']
   },
   {
@@ -133,6 +150,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Инди',
     description: 'Инди-подборки Яндекс Музыки',
     source: 'yandex',
+    stationIds: ['genre:indie'],
     metatagIds: ['indie', 'alternative', 'rusindie']
   },
   {
@@ -154,6 +172,7 @@ const THEMES: ThemeConfig[] = [
     title: 'K-pop',
     description: 'K-pop подборки Яндекс Музыки',
     source: 'yandex',
+    stationIds: ['genre:kpop', 'genre:k-pop'],
     metatagIds: ['k-pop', 'kpop']
   },
   {
@@ -171,7 +190,7 @@ export class MusicService {
   private lastFallbackReason: string | undefined;
 
   getThemes(): Theme[] {
-    return THEMES.map(({ chartId: _chartId, metatagIds: _metatagIds, ...theme }) => theme);
+    return THEMES.map(({ chartId: _chartId, metatagIds: _metatagIds, stationIds: _stationIds, ...theme }) => theme);
   }
 
   diagnostics(): MusicDiagnostics {
@@ -184,17 +203,16 @@ export class MusicService {
     };
   }
 
-  async prepareTrackPool(
-    themeId: string,
-    options: { playableLimit: number; optionLimit: number }
-  ): Promise<TrackPool> {
-    if (this.forceDemo || themeId === 'demo-pop') {
+  async prepareTrackPool(source: TrackSourceInput, options: { playableLimit: number; optionLimit: number }): Promise<TrackPool> {
+    const themeIds = typeof source === 'string' ? [source] : source.themeIds?.length ? source.themeIds : ['chart-russia'];
+    const playlistUrl = typeof source === 'string' ? undefined : source.playlistUrl;
+
+    if (this.forceDemo || themeIds.includes('demo-pop')) {
       return toDemoPool(false);
     }
 
     try {
-      const theme = THEMES.find((candidate) => candidate.id === themeId) ?? THEMES[0];
-      const candidates = uniqueByTrackId(shuffle(await this.getThemeCandidates(theme)));
+      const candidates = uniqueByTrackId(shuffle(await this.getSourceCandidates(themeIds, playlistUrl)));
       const optionTracks = uniqueByTitle(candidates.map(toTrackMetadata)).slice(0, options.optionLimit);
       const playableTracks: Track[] = [];
 
@@ -263,6 +281,13 @@ export class MusicService {
       return this.getChartCandidates(theme.chartId);
     }
 
+    if (theme.stationIds) {
+      const tracks = await this.getStationCandidates(theme.stationIds);
+      if (tracks.length > 0) {
+        return tracks;
+      }
+    }
+
     if (theme.metatagIds) {
       const tracks = await this.getMetatagCandidates(theme.metatagIds);
       if (tracks.length > 0) {
@@ -270,7 +295,25 @@ export class MusicService {
       }
     }
 
-    return this.getChartCandidates('russia');
+    return [];
+  }
+
+  private async getSourceCandidates(themeIds: string[], playlistUrl?: string): Promise<YandexTrack[]> {
+    const tracks: YandexTrack[] = [];
+
+    if (playlistUrl) {
+      tracks.push(...(await this.getPlaylistUrlCandidates(playlistUrl)));
+    }
+
+    for (const themeId of themeIds) {
+      const theme = THEMES.find((candidate) => candidate.id === themeId) ?? THEMES[0];
+      tracks.push(...(await this.getThemeCandidates(theme)));
+      if (tracks.length >= 260) {
+        break;
+      }
+    }
+
+    return uniqueByTrackId(tracks).slice(0, 260);
   }
 
   private async getChartCandidates(chartId: 'russia' | 'world'): Promise<YandexTrack[]> {
@@ -288,6 +331,31 @@ export class MusicService {
     for (const metatagId of metatagIds) {
       tracks.push(...(await this.getMetatagTracks(metatagId)));
       if (tracks.length >= 120) {
+        break;
+      }
+    }
+
+    return uniqueByTrackId(tracks);
+  }
+
+  private async getStationCandidates(stationIds: string[]): Promise<YandexTrack[]> {
+    const tracks: YandexTrack[] = [];
+
+    for (const stationId of stationIds) {
+      try {
+        const result = await this.get<StationTracksResult>(
+          `/rotor/station/${encodeURIComponent(stationId)}/tracks?${new URLSearchParams({ settings2: 'true' })}`
+        );
+        tracks.push(
+          ...(result.sequence
+            ?.map((entry) => entry.track)
+            .filter((track): track is YandexTrack => Boolean(track?.id && track.title)) ?? [])
+        );
+      } catch (error) {
+        console.warn(`[music] station ${stationId} failed: ${toClientMessage(error)}`);
+      }
+
+      if (tracks.length >= 80) {
         break;
       }
     }
@@ -355,6 +423,23 @@ export class MusicService {
     }
 
     return tracks;
+  }
+
+  private async getPlaylistUrlCandidates(playlistUrl: string): Promise<YandexTrack[]> {
+    const parsed = parseYandexPlaylistUrl(playlistUrl);
+    if (!parsed) {
+      throw new Error('Unsupported Yandex Music playlist URL');
+    }
+
+    if (parsed.type === 'uuid') {
+      const result = await this.get<PlaylistResult>(`/playlist/${parsed.uuid}`);
+      const playlist: YandexPlaylist = isPlaylistEnvelope(result) ? result.playlist : (result as YandexPlaylist);
+      return extractTracks(playlist.tracks).slice(0, 260);
+    }
+
+    const result = await this.get<PlaylistResult>(`/users/${parsed.uid}/playlists/${parsed.kind}`);
+    const playlist: YandexPlaylist = isPlaylistEnvelope(result) ? result.playlist : (result as YandexPlaylist);
+    return extractTracks(playlist.tracks).slice(0, 260);
   }
 
   private async resolveAudioUrl(track: YandexTrack): Promise<string | undefined> {
@@ -502,6 +587,36 @@ function getEntryTrack(entry: YandexTrack | YandexTrackShort): YandexTrack | und
 
 function isPlaylistEnvelope(value: PlaylistResult): value is { playlist: YandexPlaylist } {
   return 'playlist' in value && Boolean(value.playlist);
+}
+
+type ParsedPlaylistUrl = { type: 'user'; uid: string; kind: string } | { type: 'uuid'; uuid: string };
+
+function parseYandexPlaylistUrl(value: string): ParsedPlaylistUrl | undefined {
+  try {
+    const url = new URL(value);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const userIndex = parts.indexOf('users');
+    const playlistIndex = parts.indexOf('playlists');
+
+    if (userIndex >= 0 && playlistIndex === userIndex + 2 && parts[userIndex + 1] && parts[playlistIndex + 1]) {
+      return {
+        type: 'user',
+        uid: decodeURIComponent(parts[userIndex + 1]),
+        kind: decodeURIComponent(parts[playlistIndex + 1])
+      };
+    }
+
+    if (playlistIndex >= 0 && parts[playlistIndex + 1]) {
+      return {
+        type: 'uuid',
+        uuid: decodeURIComponent(parts[playlistIndex + 1])
+      };
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
 }
 
 function normalizeCoverUrl(coverUri?: string): string | undefined {

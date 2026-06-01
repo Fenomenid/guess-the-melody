@@ -366,6 +366,35 @@ select:focus {
   gap: 12px;
 }
 
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.theme-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.theme-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #c3b6a3;
+  border-radius: 8px;
+  color: #3b342a;
+  background: #ded4c4;
+  font-weight: 900;
+}
+
+.theme-choice input {
+  width: 16px;
+  min-height: 16px;
+  accent-color: #477f75;
+}
+
 .notice {
   display: flex;
   align-items: flex-start;
@@ -602,6 +631,18 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
+.answer-summary {
+  display: block;
+  margin-top: 4px;
+  color: #697384;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.answer-summary.correct {
+  color: #4f8765;
+}
+
 .score-row em {
   color: #477f75;
   font-style: normal;
@@ -756,6 +797,12 @@ select:focus {
 }
 
 :root[data-theme="dark"] .secondary {
+  color: #dbe7f6;
+  background: #203044;
+  border-color: #334860;
+}
+
+:root[data-theme="dark"] .theme-choice {
   color: #dbe7f6;
   background: #203044;
   border-color: #334860;

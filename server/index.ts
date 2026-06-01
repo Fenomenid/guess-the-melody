@@ -6,7 +6,7 @@ import { Server } from 'socket.io';
 import { GameEngine } from './game';
 import { MusicService } from './music';
 import { RoomStore } from './roomStore';
-import type { Track, TrackMetadata } from './types';
+import type { RoomSettings, Track, TrackMetadata } from './types';
 
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? '0.0.0.0';
@@ -92,10 +92,17 @@ io.on('connection', (socket) => {
       await persistRooms();
       io.to(preparingRoom.code).emit('room_state', preparingRoom);
 
-      const pool = await music.prepareTrackPool(preparingRoom.settings.themeId, {
-        playableLimit: Math.max(10, preparingRoom.settings.rounds + 6),
-        optionLimit: Math.max(80, preparingRoom.settings.rounds * 12)
-      });
+      const plannedRounds = preparingRoom.settings.winCondition === 'score' ? estimateRoundsForScore(preparingRoom.settings.targetScore) : preparingRoom.settings.rounds;
+      const pool = await music.prepareTrackPool(
+        {
+          themeIds: preparingRoom.settings.themeIds,
+          playlistUrl: preparingRoom.settings.playlistUrl
+        },
+        {
+          playableLimit: Math.max(12, plannedRounds + 10),
+          optionLimit: Math.max(180, plannedRounds * 18)
+        }
+      );
       roomTracks.set(preparingRoom.code, shuffle(pool.playableTracks));
       roomOptionTracks.set(preparingRoom.code, shuffle(pool.optionTracks));
       await startRound(preparingRoom.code);
@@ -206,7 +213,7 @@ async function startRound(code: string): Promise<void> {
     io.to(room.code).emit('round_result', revealed);
     io.to(room.code).emit('room_state', revealed);
     roundTimers.delete(room.code);
-  }, updated.currentQuestion?.durationMs ?? room.settings.questionDurationMs);
+  }, Math.max(0, (updated.currentQuestion?.endsAt ?? Date.now() + room.settings.questionDurationMs) - Date.now()));
 
   roundTimers.set(room.code, timer);
 }
@@ -219,7 +226,7 @@ function clearRoundTimer(code: string): void {
   }
 }
 
-function parseSettings(value: unknown) {
+function parseSettings(value: unknown): Partial<RoomSettings> {
   if (!value || typeof value !== 'object') {
     return {};
   }
@@ -227,9 +234,17 @@ function parseSettings(value: unknown) {
   const raw = value as Record<string, unknown>;
   return {
     themeId: typeof raw.themeId === 'string' ? raw.themeId : undefined,
+    themeIds: Array.isArray(raw.themeIds) ? raw.themeIds.filter((item): item is string => typeof item === 'string') : undefined,
+    playlistUrl: typeof raw.playlistUrl === 'string' ? raw.playlistUrl : undefined,
+    winCondition: raw.winCondition === 'score' || raw.winCondition === 'rounds' ? raw.winCondition : undefined,
     rounds: typeof raw.rounds === 'number' ? raw.rounds : undefined,
+    targetScore: typeof raw.targetScore === 'number' ? raw.targetScore : undefined,
     questionDurationMs: typeof raw.questionDurationMs === 'number' ? raw.questionDurationMs : undefined
   };
+}
+
+function estimateRoundsForScore(targetScore: number): number {
+  return Math.max(8, Math.min(24, Math.ceil(targetScore / 650) + 4));
 }
 
 function toClientError(error: unknown): string {

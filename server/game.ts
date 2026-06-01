@@ -18,6 +18,7 @@ type Room = {
   players: Map<string, Player>;
   currentQuestion?: QuestionInternal;
   usedTrackIds: Set<string>;
+  usedOptionTitles: Set<string>;
   round: number;
 };
 
@@ -28,6 +29,7 @@ export type SerializedRoom = {
   players: Player[];
   currentQuestion?: QuestionInternal;
   usedTrackIds: string[];
+  usedOptionTitles?: string[];
   round: number;
 };
 
@@ -38,7 +40,10 @@ type PlayerInput = {
 
 const DEFAULT_SETTINGS: RoomSettings = {
   themeId: 'chart-russia',
+  themeIds: ['chart-russia'],
+  winCondition: 'rounds',
   rounds: 5,
+  targetScore: 3000,
   questionDurationMs: 15_000
 };
 
@@ -60,6 +65,7 @@ export class GameEngine {
       settings: { ...DEFAULT_SETTINGS },
       players: new Map([[player.id, player]]),
       usedTrackIds: new Set(),
+      usedOptionTitles: new Set(),
       round: 0
     };
 
@@ -90,7 +96,12 @@ export class GameEngine {
     room.settings = {
       ...room.settings,
       ...settings,
+      themeIds: sanitizeThemeIds(settings.themeIds ?? room.settings.themeIds ?? [settings.themeId ?? room.settings.themeId]),
+      themeId: sanitizeThemeIds(settings.themeIds ?? room.settings.themeIds ?? [settings.themeId ?? room.settings.themeId])[0],
+      playlistUrl: sanitizeOptionalUrl(settings.playlistUrl ?? room.settings.playlistUrl),
+      winCondition: settings.winCondition === 'score' ? 'score' : settings.winCondition === 'rounds' ? 'rounds' : room.settings.winCondition,
       rounds: clampInteger(settings.rounds ?? room.settings.rounds, 1, 20),
+      targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 20_000),
       questionDurationMs: clampInteger(settings.questionDurationMs ?? room.settings.questionDurationMs, 5_000, 30_000)
     };
 
@@ -124,9 +135,13 @@ export class GameEngine {
     const available = tracks.filter((track) => !room.usedTrackIds.has(track.id));
     const correctPool = available.length > 0 ? available : tracks;
     const correctTrack = shuffle(correctPool)[0];
-    const distractorPool = uniqueByTitle(optionTracks).filter(
+    const freshDistractorPool = uniqueByTitle(optionTracks).filter(
       (track) => track.id !== correctTrack.id && normalizeTitle(track.title) !== normalizeTitle(correctTrack.title)
     );
+    const distractorPool =
+      freshDistractorPool.filter((track) => !room.usedOptionTitles.has(normalizeTitle(track.title))).length >= 3
+        ? freshDistractorPool.filter((track) => !room.usedOptionTitles.has(normalizeTitle(track.title)))
+        : freshDistractorPool;
     const sameScriptDistractors = distractorPool.filter((track) => titleScriptBucket(track.title) === titleScriptBucket(correctTrack.title));
     const distractors = shuffle(sameScriptDistractors.length >= 3 ? sameScriptDistractors : distractorPool).slice(0, 3);
     const selected = [correctTrack, ...distractors];
@@ -147,14 +162,19 @@ export class GameEngine {
     room.round += 1;
     room.status = 'question';
     room.usedTrackIds.add(correctTrack.id);
+    for (const track of selected) {
+      room.usedOptionTitles.add(normalizeTitle(track.title));
+    }
+    const durationMsFinal = durationMs ?? room.settings.questionDurationMs;
     room.currentQuestion = {
       id: randomUUID(),
       round: room.round,
       audioUrl: correctTrack.audioUrl,
       coverUrl: correctTrack.coverUrl,
       options,
-      durationMs: durationMs ?? room.settings.questionDurationMs,
+      durationMs: durationMsFinal,
       startedAt,
+      endsAt: startedAt + durationMsFinal,
       correctOptionId: correctTrack.id,
       correctTrack,
       scoresApplied: false
@@ -187,7 +207,7 @@ export class GameEngine {
   revealRound(code: string): PublicRoom {
     const room = this.requireRoom(code);
     this.applyRoundScores(room);
-    room.status = room.round >= room.settings.rounds ? 'finished' : 'round-result';
+    room.status = isGameFinished(room) ? 'finished' : 'round-result';
     return toPublicRoom(room, true);
   }
 
@@ -254,6 +274,7 @@ export class GameEngine {
       players: [...room.players.values()],
       currentQuestion: room.currentQuestion,
       usedTrackIds: [...room.usedTrackIds],
+      usedOptionTitles: [...room.usedOptionTitles],
       round: room.round
     }));
   }
@@ -265,10 +286,11 @@ export class GameEngine {
       const room: Room = {
         code: snapshot.code.toUpperCase(),
         status: restoredStatus,
-        settings: snapshot.settings,
+        settings: normalizeSettings(snapshot.settings),
         players: new Map(snapshot.players.map((player) => [player.id, { ...player, connected: false, lastAnswer: undefined }])),
         currentQuestion: restoredStatus === 'finished' ? snapshot.currentQuestion : undefined,
         usedTrackIds: new Set(snapshot.usedTrackIds),
+        usedOptionTitles: new Set(snapshot.usedOptionTitles ?? []),
         round: restoredStatus === 'finished' ? snapshot.round : 0
       };
       this.ensureHost(room);
@@ -316,7 +338,8 @@ function toPublicRoom(room: Room, revealCorrectTrack = false): PublicRoom {
         coverUrl: room.currentQuestion.coverUrl,
         options: room.currentQuestion.options,
         durationMs: room.currentQuestion.durationMs,
-        startedAt: room.currentQuestion.startedAt
+        startedAt: room.currentQuestion.startedAt,
+        endsAt: room.currentQuestion.endsAt
       }
     : undefined;
 
@@ -324,10 +347,11 @@ function toPublicRoom(room: Room, revealCorrectTrack = false): PublicRoom {
     code: room.code,
     status: room.status,
     settings: room.settings,
-    players: [...room.players.values()].map((player) => toPublicPlayer(player, revealCorrectTrack)).sort((a, b) => b.score - a.score),
+    players: sortPublicPlayers([...room.players.values()].map((player) => toPublicPlayer(player, revealCorrectTrack)), revealCorrectTrack),
     currentQuestion: question,
     correctTrack: revealCorrectTrack ? room.currentQuestion?.correctTrack : undefined,
-    round: room.round
+    round: room.round,
+    serverTime: Date.now()
   };
 }
 
@@ -347,6 +371,20 @@ function toPublicPlayer(player: Player, revealAnswer: boolean): Player {
   };
 }
 
+function sortPublicPlayers(players: Player[], revealRound: boolean): Player[] {
+  if (revealRound) {
+    return players.sort((a, b) => (b.lastAnswer?.points ?? 0) - (a.lastAnswer?.points ?? 0) || b.score - a.score);
+  }
+  return players.sort((a, b) => b.score - a.score);
+}
+
+function isGameFinished(room: Room): boolean {
+  if (room.settings.winCondition === 'score') {
+    return [...room.players.values()].some((player) => player.score >= room.settings.targetScore);
+  }
+  return room.round >= room.settings.rounds;
+}
+
 function createPlayer(input: PlayerInput, isHost: boolean): Player {
   return {
     id: input.playerId,
@@ -364,6 +402,34 @@ function sanitizeName(value: string): string {
 
 function normalizeTitle(value: string): string {
   return value.trim().toLocaleLowerCase('ru').replace(/\s+/g, ' ');
+}
+
+function sanitizeThemeIds(value: string[] | undefined): string[] {
+  const ids = (value ?? []).filter((themeId): themeId is string => typeof themeId === 'string' && themeId.trim().length > 0);
+  return ids.length > 0 ? [...new Set(ids.map((themeId) => themeId.trim()))].slice(0, 6) : ['chart-russia'];
+}
+
+function sanitizeOptionalUrl(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return /^https?:\/\//i.test(trimmed) ? trimmed.slice(0, 600) : undefined;
+}
+
+function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
+  const themeIds = sanitizeThemeIds(settings.themeIds ?? [settings.themeId ?? DEFAULT_SETTINGS.themeId]);
+  return {
+    ...DEFAULT_SETTINGS,
+    ...settings,
+    themeIds,
+    themeId: themeIds[0],
+    playlistUrl: sanitizeOptionalUrl(settings.playlistUrl),
+    winCondition: settings.winCondition === 'score' ? 'score' : 'rounds',
+    rounds: clampInteger(settings.rounds ?? DEFAULT_SETTINGS.rounds, 1, 20),
+    targetScore: clampInteger(settings.targetScore ?? DEFAULT_SETTINGS.targetScore, 500, 20_000),
+    questionDurationMs: clampInteger(settings.questionDurationMs ?? DEFAULT_SETTINGS.questionDurationMs, 5_000, 30_000)
+  };
 }
 
 function uniqueByTitle<T extends TrackMetadata>(tracks: T[]): T[] {
@@ -418,5 +484,10 @@ function clampInteger(value: number, min: number, max: number): number {
 }
 
 function shuffle<T>(items: T[]): T[] {
-  return [...items].sort(() => Math.random() - 0.5);
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
 }

@@ -100,6 +100,30 @@ describe('GameEngine', () => {
     expect(engine.revealRound('ROOM42').players[0].score).toBeGreaterThan(0);
   });
 
+  it('publishes server time and round end time for synchronized countdowns', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    const publicRoom = engine.getPublicRoom('ROOM42');
+
+    expect(question.endsAt).toBe(11_000);
+    expect(publicRoom.currentQuestion?.endsAt).toBe(11_000);
+    expect(publicRoom.serverTime).toEqual(expect.any(Number));
+  });
+
+  it('can finish the game by target score instead of round count', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { winCondition: 'score', targetScore: 500, rounds: 20 });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+
+    engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 2000);
+    const revealed = engine.revealRound('ROOM42');
+
+    expect(revealed.status).toBe('finished');
+  });
+
   it('marks the room as preparing while tracks are loading', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });

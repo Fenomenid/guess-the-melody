@@ -31,6 +31,7 @@ export type Question = {
   options: TrackOption[];
   durationMs: number;
   startedAt: number;
+  endsAt: number;
 };
 
 export type QuestionInternal = Question & {
@@ -57,7 +58,11 @@ export type PlayerAnswerResult = {
 
 export type RoomSettings = {
   themeId: string;
+  themeIds: string[];
+  playlistUrl?: string;
+  winCondition: 'rounds' | 'score';
   rounds: number;
+  targetScore: number;
   questionDurationMs: number;
 };
 
@@ -69,4 +74,5 @@ export type PublicRoom = {
   currentQuestion?: Question;
   correctTrack?: Track;
   round: number;
+  serverTime: number;
 };
