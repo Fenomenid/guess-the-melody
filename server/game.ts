@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   Player,
   PlayerAnswerResult,
+  PlaylistSource,
   PublicRoom,
   QuestionInternal,
   RoomSettings,
@@ -42,6 +43,7 @@ const DEFAULT_SETTINGS: RoomSettings = {
   themeId: 'chart-russia',
   themeIds: ['chart-russia'],
   playlistUrls: [],
+  playlistSources: [],
   winCondition: 'rounds',
   rounds: 5,
   targetScore: 3000,
@@ -95,10 +97,14 @@ export class GameEngine {
       throw new Error('Settings can only be changed in lobby');
     }
 
-    const playlistUrls = sanitizePlaylistUrls(
-      settings.playlistUrls ??
-        (settings.playlistUrl !== undefined ? [settings.playlistUrl] : room.settings.playlistUrls ?? (room.settings.playlistUrl ? [room.settings.playlistUrl] : []))
+    const playlistSources = sanitizePlaylistSources(
+      settings.playlistSources ??
+        (settings.playlistUrls || settings.playlistUrl !== undefined
+          ? toPlaylistSources(settings.playlistUrls ?? (settings.playlistUrl !== undefined ? [settings.playlistUrl] : []))
+          : room.settings.playlistSources ??
+            toPlaylistSources(room.settings.playlistUrls ?? (room.settings.playlistUrl ? [room.settings.playlistUrl] : [])))
     );
+    const playlistUrls = playlistSources.map((source) => source.url);
     const playlistUrl = playlistUrls[0];
     const requestedThemeIds = settings.themeIds ?? (settings.themeId ? [settings.themeId] : room.settings.themeIds ?? [room.settings.themeId]);
     const themeIds = sanitizeThemeIds(requestedThemeIds, playlistUrls.length > 0);
@@ -110,6 +116,7 @@ export class GameEngine {
       themeId: themeIds[0] ?? room.settings.themeId ?? DEFAULT_SETTINGS.themeId,
       playlistUrl,
       playlistUrls,
+      playlistSources,
       winCondition: settings.winCondition === 'score' ? 'score' : settings.winCondition === 'rounds' ? 'rounds' : room.settings.winCondition,
       rounds: clampInteger(settings.rounds ?? room.settings.rounds, 1, 100),
       targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 200_000),
@@ -183,6 +190,7 @@ export class GameEngine {
       round: room.round,
       audioUrl: correctTrack.audioUrl,
       coverUrl: correctTrack.coverUrl,
+      sourceName: correctTrack.sourceName,
       options,
       durationMs: durationMsFinal,
       startedAt,
@@ -348,6 +356,7 @@ function toPublicRoom(room: Room, revealCorrectTrack = false): PublicRoom {
         round: room.currentQuestion.round,
         audioUrl: room.currentQuestion.audioUrl,
         coverUrl: room.currentQuestion.coverUrl,
+        sourceName: room.currentQuestion.sourceName,
         options: room.currentQuestion.options,
         durationMs: room.currentQuestion.durationMs,
         startedAt: room.currentQuestion.startedAt,
@@ -436,8 +445,49 @@ function sanitizePlaylistUrls(value: string[] | undefined): string[] {
   return [...new Set(urls)].slice(0, 10);
 }
 
+function sanitizePlaylistSources(value: PlaylistSource[] | undefined): PlaylistSource[] {
+  const result: PlaylistSource[] = [];
+  const seen = new Set<string>();
+
+  for (const source of value ?? []) {
+    const url = sanitizeOptionalUrl(source.url);
+    if (!url || seen.has(url)) {
+      continue;
+    }
+    seen.add(url);
+    result.push({
+      url,
+      name: sanitizePlaylistSourceName(source.name, result.length, url)
+    });
+    if (result.length >= 10) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+function toPlaylistSources(urls: string[] | undefined): PlaylistSource[] {
+  return sanitizePlaylistUrls(urls).map((url, index) => ({
+    url,
+    name: defaultPlaylistSourceName(url, index)
+  }));
+}
+
+function sanitizePlaylistSourceName(value: string | undefined, index: number, url: string): string {
+  const name = value?.trim().replace(/\s+/g, ' ').slice(0, 48);
+  return name || defaultPlaylistSourceName(url, index);
+}
+
+function defaultPlaylistSourceName(url: string, index: number): string {
+  return /\/album\//i.test(url) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`;
+}
+
 function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
-  const playlistUrls = sanitizePlaylistUrls(settings.playlistUrls ?? (settings.playlistUrl ? [settings.playlistUrl] : []));
+  const playlistSources = sanitizePlaylistSources(
+    settings.playlistSources ?? toPlaylistSources(settings.playlistUrls ?? (settings.playlistUrl ? [settings.playlistUrl] : []))
+  );
+  const playlistUrls = playlistSources.map((source) => source.url);
   const playlistUrl = playlistUrls[0];
   const themeIds = sanitizeThemeIds(settings.themeIds ?? [settings.themeId ?? DEFAULT_SETTINGS.themeId], playlistUrls.length > 0);
   return {
@@ -447,6 +497,7 @@ function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
     themeId: themeIds[0] ?? settings.themeId ?? DEFAULT_SETTINGS.themeId,
     playlistUrl,
     playlistUrls,
+    playlistSources,
     winCondition: settings.winCondition === 'score' ? 'score' : 'rounds',
     rounds: clampInteger(settings.rounds ?? DEFAULT_SETTINGS.rounds, 1, 100),
     targetScore: clampInteger(settings.targetScore ?? DEFAULT_SETTINGS.targetScore, 500, 200_000),

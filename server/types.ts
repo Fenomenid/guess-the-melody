@@ -17,6 +17,8 @@ export type TrackMetadata = {
   title: string;
   artist: string;
   coverUrl?: string;
+  sourceName?: string;
+  sourceUrl?: string;
 };
 
 export type Track = TrackMetadata & {
@@ -28,6 +30,7 @@ export type Question = {
   round: number;
   audioUrl: string;
   coverUrl?: string;
+  sourceName?: string;
   options: TrackOption[];
   durationMs: number;
   startedAt: number;
@@ -56,11 +59,17 @@ export type PlayerAnswerResult = {
   points: number;
 };
 
+export type PlaylistSource = {
+  url: string;
+  name: string;
+};
+
 export type RoomSettings = {
   themeId: string;
   themeIds: string[];
   playlistUrl?: string;
   playlistUrls?: string[];
+  playlistSources?: PlaylistSource[];
   winCondition: 'rounds' | 'score';
   rounds: number;
   targetScore: number;

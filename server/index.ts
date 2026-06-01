@@ -101,6 +101,7 @@ io.on('connection', (socket) => {
       const plannedRounds = preparingRoom.settings.winCondition === 'score' ? estimateRoundsForScore(preparingRoom.settings.targetScore) : preparingRoom.settings.rounds;
       const source = {
         themeIds: preparingRoom.settings.themeIds,
+        playlistSources: preparingRoom.settings.playlistSources,
         playlistUrls: preparingRoom.settings.playlistUrls,
         playlistUrl: preparingRoom.settings.playlistUrl
       };
@@ -212,7 +213,7 @@ async function bootstrap(): Promise<void> {
 async function hydrateRoomTrackPool(
   code: string,
   loadToken: number,
-  source: { themeIds: string[]; playlistUrls?: string[]; playlistUrl?: string },
+  source: { themeIds: string[]; playlistSources?: RoomSettings['playlistSources']; playlistUrls?: string[]; playlistUrl?: string },
   plannedRounds: number
 ): Promise<void> {
   try {
@@ -319,6 +320,11 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
     themeIds: Array.isArray(raw.themeIds) ? raw.themeIds.filter((item): item is string => typeof item === 'string') : undefined,
     playlistUrl: typeof raw.playlistUrl === 'string' ? raw.playlistUrl : undefined,
     playlistUrls: Array.isArray(raw.playlistUrls) ? raw.playlistUrls.filter((item): item is string => typeof item === 'string') : undefined,
+    playlistSources: Array.isArray(raw.playlistSources)
+      ? raw.playlistSources
+          .filter((item): item is { url: string; name?: string } => Boolean(item) && typeof item === 'object' && typeof (item as { url?: unknown }).url === 'string')
+          .map((item) => ({ url: item.url, name: typeof item.name === 'string' ? item.name : '' }))
+      : undefined,
     winCondition: raw.winCondition === 'score' || raw.winCondition === 'rounds' ? raw.winCondition : undefined,
     rounds: typeof raw.rounds === 'number' ? raw.rounds : undefined,
     targetScore: typeof raw.targetScore === 'number' ? raw.targetScore : undefined,

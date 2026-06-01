@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Theme, Track, TrackMetadata } from './types';
+import type { PlaylistSource, Theme, Track, TrackMetadata } from './types';
 
 const YANDEX_API_BASE = 'https://api.music.yandex.net';
 const DOWNLOAD_SIGN_SALT = 'XGRlBW9FXlekgbPrRHuSiA';
@@ -14,6 +14,8 @@ type YandexTrack = {
   coverUri?: string;
   albums?: Array<{ id: string | number }>;
   artists?: Array<{ name: string }>;
+  sourceName?: string;
+  sourceUrl?: string;
 };
 
 type YandexTrackShort = {
@@ -86,6 +88,7 @@ type TrackSourceInput =
       themeIds?: string[];
       playlistUrl?: string;
       playlistUrls?: string[];
+      playlistSources?: PlaylistSource[];
     };
 
 export type TrackPool = {
@@ -234,11 +237,11 @@ export class MusicService {
   }
 
   async prepareTrackPool(source: TrackSourceInput, options: { playableLimit: number; optionLimit: number }): Promise<TrackPool> {
-    const playlistUrls = typeof source === 'string' ? [] : source.playlistUrls?.length ? source.playlistUrls : source.playlistUrl ? [source.playlistUrl] : [];
+    const playlistSources = typeof source === 'string' ? [] : normalizePlaylistSources(source.playlistSources, source.playlistUrls, source.playlistUrl);
     const themeIds =
       typeof source === 'string'
         ? [source]
-        : source.themeIds && (source.themeIds.length > 0 || playlistUrls.length > 0)
+        : source.themeIds && (source.themeIds.length > 0 || playlistSources.length > 0)
           ? source.themeIds
           : ['chart-russia'];
 
@@ -247,7 +250,7 @@ export class MusicService {
     }
 
     try {
-      const candidates = uniqueByTrackId(await this.getSourceCandidates(themeIds, playlistUrls));
+      const candidates = uniqueByTrackId(await this.getSourceCandidates(themeIds, playlistSources));
       const optionTracks = uniqueByTitle(candidates.map(toTrackMetadata)).slice(0, options.optionLimit);
       const playableTracks: Track[] = [];
       const stats = createTrackLoadStats(candidates.length, optionTracks.length);
@@ -338,23 +341,30 @@ export class MusicService {
     return uniqueByTrackId(tracks);
   }
 
-  private async getSourceCandidates(themeIds: string[], playlistUrls: string[] = []): Promise<YandexTrack[]> {
+  private async getSourceCandidates(themeIds: string[], playlistSources: PlaylistSource[] = []): Promise<YandexTrack[]> {
     const sourceGroups: YandexTrack[][] = [];
 
-    for (const playlistUrl of playlistUrls) {
+    for (const playlistSource of playlistSources) {
       try {
-        const tracks = await this.getPlaylistUrlCandidates(playlistUrl);
+        const tracks = (await this.getPlaylistUrlCandidates(playlistSource.url)).map((track) => ({
+          ...track,
+          sourceName: playlistSource.name,
+          sourceUrl: playlistSource.url
+        }));
         if (tracks.length > 0) {
           sourceGroups.push(shuffle(tracks));
         }
       } catch (error) {
-        console.warn(`[music] source ${playlistUrl} failed: ${toClientMessage(error)}`);
+        console.warn(`[music] source ${playlistSource.url} failed: ${toClientMessage(error)}`);
       }
     }
 
     for (const themeId of themeIds) {
       const theme = THEMES.find((candidate) => candidate.id === themeId) ?? THEMES[0];
-      const tracks = await this.getThemeCandidates(theme);
+      const tracks = (await this.getThemeCandidates(theme)).map((track) => ({
+        ...track,
+        sourceName: theme.title
+      }));
       if (tracks.length > 0) {
         sourceGroups.push(shuffle(tracks));
       }
@@ -726,8 +736,21 @@ function toTrackMetadata(track: YandexTrack): TrackMetadata {
     id: String(track.id),
     title: track.title,
     artist: track.artists?.map((artist) => artist.name).join(', ') || 'Неизвестный исполнитель',
-    coverUrl: normalizeCoverUrl(track.coverUri)
+    coverUrl: normalizeCoverUrl(track.coverUri),
+    sourceName: track.sourceName,
+    sourceUrl: track.sourceUrl
   };
+}
+
+function normalizePlaylistSources(sources?: PlaylistSource[], urls?: string[], url?: string): PlaylistSource[] {
+  if (sources?.length) {
+    return sources.slice(0, 10);
+  }
+  const playlistUrls = urls?.length ? urls : url ? [url] : [];
+  return playlistUrls.slice(0, 10).map((playlistUrl, index) => ({
+    url: playlistUrl,
+    name: /\/album\//i.test(playlistUrl) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`
+  }));
 }
 
 function uniqueByTrackId<T extends { id: string | number }>(items: T[]): T[] {

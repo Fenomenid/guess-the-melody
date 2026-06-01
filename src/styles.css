@@ -442,9 +442,9 @@ select:focus {
   accent-color: #477f75;
 }
 
-.playlist-input-row {
+.playlist-input-grid {
   display: grid;
-  grid-template-columns: 1fr 44px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(180px, 0.8fr) auto;
   gap: 8px;
 }
 
@@ -642,10 +642,30 @@ select:focus {
   animation-delay: var(--delay);
 }
 
-.live-equalizer span {
-  height: var(--level);
-  animation: none;
-  transition: height 70ms linear;
+.music-activity {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+}
+
+.source-pill {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #cbdde2;
+  border-radius: 999px;
+  color: #2f5060;
+  background: rgba(249, 250, 249, 0.82);
+  font-weight: 900;
+  box-shadow: 0 10px 20px rgba(47, 80, 96, 0.08);
+}
+
+.source-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .audio-notice {
@@ -729,6 +749,12 @@ select:focus {
 }
 
 .solution span {
+  color: #697384;
+  font-weight: 800;
+}
+
+.solution small {
+  display: block;
   color: #697384;
   font-weight: 800;
 }
@@ -1138,6 +1164,12 @@ select:focus {
     conic-gradient(#2f8eb7 var(--progress), #31435b 0);
 }
 
+:root[data-theme="dark"] .source-pill {
+  color: #dff4ff;
+  background: rgba(17, 26, 39, 0.84);
+  border-color: #2d607d;
+}
+
 :root[data-theme="dark"] .selected-answer {
   color: #ffffff;
   background: #2f8eb7;
@@ -1282,6 +1314,7 @@ select:focus {
   }
 
   .settings-grid,
+  .playlist-input-grid,
   .answers,
   .music-visual {
     grid-template-columns: 1fr;

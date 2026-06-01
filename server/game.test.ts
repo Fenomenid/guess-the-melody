@@ -112,6 +112,21 @@ describe('GameEngine', () => {
     expect(publicRoom.serverTime).toEqual(expect.any(Number));
   });
 
+  it('publishes the playlist source for the current and revealed track', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    const sourcedTracks: Track[] = tracks.map((track) => ({
+      ...track,
+      sourceName: 'Дорога',
+      sourceUrl: 'https://music.yandex.ru/users/example/playlists/1000'
+    }));
+
+    engine.startNextRound('ROOM42', sourcedTracks, 10_000, 1000);
+
+    expect(engine.getPublicRoom('ROOM42').currentQuestion?.sourceName).toBe('Дорога');
+    expect(engine.revealRound('ROOM42').correctTrack?.sourceName).toBe('Дорога');
+  });
+
   it('can finish the game by target score instead of round count', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
@@ -163,6 +178,30 @@ describe('GameEngine', () => {
     expect(room.settings.playlistUrls).toEqual([
       'https://music.yandex.ru/users/example/playlists/1000',
       'https://music.yandex.ru/users/example/playlists/2000'
+    ]);
+    expect(room.settings.playlistUrl).toBe('https://music.yandex.ru/users/example/playlists/1000');
+    expect(room.settings.themeIds).toEqual([]);
+  });
+
+  it('keeps custom playlist source names and legacy URL fields in sync', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+
+    const room = engine.updateSettings('ROOM42', {
+      playlistSources: [
+        { url: 'https://music.yandex.ru/users/example/playlists/1000', name: 'Дорога' },
+        { url: 'https://music.yandex.ru/album/2000', name: '' }
+      ],
+      themeIds: []
+    });
+
+    expect(room.settings.playlistSources).toEqual([
+      { url: 'https://music.yandex.ru/users/example/playlists/1000', name: 'Дорога' },
+      { url: 'https://music.yandex.ru/album/2000', name: 'Альбом 2' }
+    ]);
+    expect(room.settings.playlistUrls).toEqual([
+      'https://music.yandex.ru/users/example/playlists/1000',
+      'https://music.yandex.ru/album/2000'
     ]);
     expect(room.settings.playlistUrl).toBe('https://music.yandex.ru/users/example/playlists/1000');
     expect(room.settings.themeIds).toEqual([]);

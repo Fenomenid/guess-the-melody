@@ -46,6 +46,11 @@ type Player = {
   };
 };
 
+type PlaylistSource = {
+  url: string;
+  name: string;
+};
+
 type Room = {
   code: string;
   status: 'lobby' | 'preparing' | 'question' | 'round-result' | 'finished';
@@ -54,6 +59,7 @@ type Room = {
     themeIds: string[];
     playlistUrl?: string;
     playlistUrls?: string[];
+    playlistSources?: PlaylistSource[];
     winCondition: 'rounds' | 'score';
     rounds: number;
     targetScore: number;
@@ -66,6 +72,7 @@ type Room = {
     round: number;
     audioUrl: string;
     coverUrl?: string;
+    sourceName?: string;
     options: Array<{ id: string; title: string }>;
     durationMs: number;
     startedAt: number;
@@ -76,6 +83,8 @@ type Room = {
     title: string;
     artist: string;
     coverUrl?: string;
+    sourceName?: string;
+    sourceUrl?: string;
   };
   round: number;
   serverTime: number;
@@ -174,16 +183,19 @@ function App() {
   }, [volume]);
 
   useEffect(() => {
-    if (room?.status !== 'lobby') {
+    if (!room?.code) {
       return;
     }
 
-    const interval = window.setInterval(() => {
+    const ping = () => {
       void fetch('/api/health?keep=room', { cache: 'no-store' }).catch(() => undefined);
-    }, 240_000);
+    };
+    ping();
+
+    const interval = window.setInterval(ping, 240_000);
 
     return () => window.clearInterval(interval);
-  }, [room?.code, room?.status]);
+  }, [room?.code]);
 
   function handleRoomState(nextRoom: Room) {
     setRoom(nextRoom);
@@ -481,6 +493,7 @@ function Lobby({
   const [targetScoreDraft, setTargetScoreDraft] = useState(String(room.settings.targetScore));
   const [secondsDraft, setSecondsDraft] = useState(String(room.settings.questionDurationMs / 1000));
   const [playlistDraft, setPlaylistDraft] = useState('');
+  const [playlistNameDraft, setPlaylistNameDraft] = useState('');
 
   useEffect(() => {
     setRoundsDraft(String(room.settings.rounds));
@@ -517,18 +530,34 @@ function Lobby({
 
   function addPlaylistUrl() {
     const playlistUrl = playlistDraft.trim();
-    if (!playlistUrl || selectedPlaylistUrls.includes(playlistUrl)) {
+    if (!playlistUrl || selectedPlaylistSources.some((source) => source.url === playlistUrl)) {
       setPlaylistDraft('');
+      setPlaylistNameDraft('');
       return;
     }
-    const playlistUrls = [...selectedPlaylistUrls, playlistUrl].slice(0, 10);
-    onSettingsChange({ playlistUrls, playlistUrl: playlistUrls[0] });
+    const nextSources = [
+      ...selectedPlaylistSources,
+      {
+        url: playlistUrl,
+        name: playlistNameDraft.trim() || defaultPlaylistSourceName(playlistUrl, selectedPlaylistSources.length)
+      }
+    ].slice(0, 10);
+    syncPlaylistSources(nextSources);
     setPlaylistDraft('');
+    setPlaylistNameDraft('');
   }
 
   function removePlaylistUrl(playlistUrl: string) {
-    const playlistUrls = selectedPlaylistUrls.filter((url) => url !== playlistUrl);
-    onSettingsChange({ playlistUrls, playlistUrl: playlistUrls[0] ?? '' });
+    syncPlaylistSources(selectedPlaylistSources.filter((source) => source.url !== playlistUrl));
+  }
+
+  function syncPlaylistSources(nextSources: PlaylistSource[]) {
+    const playlistUrls = nextSources.map((source) => source.url);
+    onSettingsChange({
+      playlistSources: nextSources,
+      playlistUrls,
+      playlistUrl: playlistUrls[0] ?? ''
+    });
   }
 
   function toggleTheme(themeId: string) {
@@ -536,24 +565,15 @@ function Lobby({
     const nextThemeIds = currentThemeIds.includes(themeId)
       ? currentThemeIds.filter((id) => id !== themeId)
       : [...currentThemeIds, themeId];
-    const playlistUrl = playlistDraft.trim();
-    const nextPlaylistUrls = playlistUrl && !selectedPlaylistUrls.includes(playlistUrl) ? [...selectedPlaylistUrls, playlistUrl].slice(0, 10) : selectedPlaylistUrls;
-    const hasPlaylistSource = nextPlaylistUrls.length > 0;
-
-    if (nextThemeIds.length > 0 || hasPlaylistSource) {
-      onSettingsChange({
-        themeIds: nextThemeIds,
-        ...(playlistUrl ? { playlistUrls: nextPlaylistUrls, playlistUrl: nextPlaylistUrls[0] } : {})
-      });
-      if (playlistUrl) {
-        setPlaylistDraft('');
-      }
+    if (nextThemeIds.length > 0 || selectedPlaylistSources.length > 0) {
+      onSettingsChange({ themeIds: nextThemeIds });
     }
   }
 
-  const selectedPlaylistUrls = room.settings.playlistUrls?.length ? room.settings.playlistUrls : room.settings.playlistUrl ? [room.settings.playlistUrl] : [];
+  const selectedPlaylistSources = getPlaylistSources(room.settings);
+  const selectedPlaylistUrls = selectedPlaylistSources.map((source) => source.url);
   const selectedThemeIds = room.settings.themeIds ?? [room.settings.themeId];
-  const hasPlaylistSource = Boolean(playlistDraft.trim() || selectedPlaylistUrls.length > 0);
+  const hasPlaylistSource = selectedPlaylistSources.length > 0;
 
   return (
     <div className="stage lobby-stage">
@@ -583,7 +603,7 @@ function Lobby({
         </label>
         <label className="field wide-field">
           <span>Плейлисты</span>
-          <div className="playlist-input-row">
+          <div className="playlist-input-grid">
             <input
               disabled={!isHost || isBusy || selectedPlaylistUrls.length >= 10}
               value={playlistDraft}
@@ -596,22 +616,36 @@ function Lobby({
               }}
               placeholder="Ссылка на плейлист или альбом Яндекс Музыки"
             />
-            <button className="secondary icon-only" type="button" disabled={!isHost || isBusy || !playlistDraft.trim()} onClick={addPlaylistUrl} aria-label="Добавить плейлист">
+            <input
+              disabled={!isHost || isBusy || selectedPlaylistUrls.length >= 10}
+              value={playlistNameDraft}
+              onChange={(event) => setPlaylistNameDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  addPlaylistUrl();
+                }
+              }}
+              placeholder="Название в игре, например Дорога"
+              maxLength={48}
+            />
+            <button className="secondary icon-text" type="button" disabled={!isHost || isBusy || !playlistDraft.trim()} onClick={addPlaylistUrl}>
               <Plus size={18} />
+              Добавить
             </button>
           </div>
-          {selectedPlaylistUrls.length > 0 && (
+          {selectedPlaylistSources.length > 0 && (
             <div className="playlist-list">
-              {selectedPlaylistUrls.map((playlistUrl, index) => (
-                <div className="playlist-item" key={playlistUrl}>
-                  <span>Плейлист {index + 1}</span>
-                  <small>{playlistUrl}</small>
+              {selectedPlaylistSources.map((source, index) => (
+                <div className="playlist-item" key={source.url}>
+                  <span>{source.name || defaultPlaylistSourceName(source.url, index)}</span>
+                  <small>{source.url}</small>
                   <button
                     className="kick-button"
                     type="button"
                     disabled={!isHost || isBusy}
-                    onClick={() => removePlaylistUrl(playlistUrl)}
-                    aria-label={`Удалить плейлист ${index + 1}`}
+                    onClick={() => removePlaylistUrl(source.url)}
+                    aria-label={`Удалить источник ${index + 1}`}
                   >
                     <X size={12} />
                   </button>
@@ -721,6 +755,21 @@ function Lobby({
   );
 }
 
+function getPlaylistSources(settings: Room['settings']): PlaylistSource[] {
+  if (settings.playlistSources?.length) {
+    return settings.playlistSources;
+  }
+  const playlistUrls = settings.playlistUrls?.length ? settings.playlistUrls : settings.playlistUrl ? [settings.playlistUrl] : [];
+  return playlistUrls.map((url, index) => ({
+    url,
+    name: defaultPlaylistSourceName(url, index)
+  }));
+}
+
+function defaultPlaylistSourceName(url: string, index: number): string {
+  return /\/album\//i.test(url) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`;
+}
+
 function PreparingStage() {
   return (
     <div className="stage preparing-stage">
@@ -749,7 +798,6 @@ function QuestionStage({
   const question = room.currentQuestion!;
   const countdown = useQuestionCountdown(question, room.serverTime);
   const [audioIssue, setAudioIssue] = useState('');
-  const levels = useAudioLevels(audioRef, question.id, question.audioUrl);
 
   function playAudio() {
     const audio = audioRef.current;
@@ -792,7 +840,15 @@ function QuestionStage({
           <strong>{countdown.secondsLeft}</strong>
           <span>сек</span>
         </div>
-        <Equalizer levels={levels} />
+        <div className="music-activity">
+          {question.sourceName && (
+            <div className="source-pill">
+              <Radio size={16} />
+              <span>{question.sourceName}</span>
+            </div>
+          )}
+          <Equalizer />
+        </div>
       </div>
       {audioIssue && (
         <div className="notice audio-notice">
@@ -849,6 +905,7 @@ function ResultStage({ room, emit }: { room: Room; isHost: boolean; emit: <T>(ev
           <div>
             <strong>{room.correctTrack.title}</strong>
             <span>{room.correctTrack.artist}</span>
+            {room.correctTrack.sourceName && <small>Источник: {room.correctTrack.sourceName}</small>}
           </div>
         </div>
       )}
@@ -989,96 +1046,22 @@ function LoadingStrip({ label }: { label: string }) {
   );
 }
 
-function Equalizer({ levels }: { levels?: number[] }) {
-  const bars = levels?.length ? levels : Array.from({ length: 18 }, () => 0);
+function Equalizer() {
+  const bars = Array.from({ length: 18 }, (_, index) => index);
   return (
-    <div className={['equalizer', levels?.length ? 'live-equalizer' : ''].filter(Boolean).join(' ')} aria-hidden="true">
-      {bars.map((level, index) => (
+    <div className="equalizer" aria-hidden="true">
+      {bars.map((_, index) => (
         <span
           key={index}
           style={
             {
-              '--delay': `${(index % 6) * 110}ms`,
-              '--level': `${Math.max(18, Math.round(level * 100))}%`
+              '--delay': `${(index % 6) * 110}ms`
             } as React.CSSProperties
           }
         />
       ))}
     </div>
   );
-}
-
-function useAudioLevels(audioRef: React.MutableRefObject<HTMLAudioElement | null>, questionId: string, audioUrl: string): number[] {
-  const [levels, setLevels] = useState<number[]>([]);
-  const contextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-
-  useEffect(() => {
-    let frame = 0;
-    const audio = audioRef.current;
-    if (!audio || !canAnalyzeAudioUrl(audioUrl)) {
-      setLevels([]);
-      return undefined;
-    }
-
-    try {
-      const AudioContextConstructor =
-        window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextConstructor) {
-        setLevels([]);
-        return undefined;
-      }
-
-      const context = contextRef.current ?? new AudioContextConstructor();
-      contextRef.current = context;
-      const analyser = analyserRef.current ?? context.createAnalyser();
-      analyser.fftSize = 64;
-      analyserRef.current = analyser;
-      const source = sourceRef.current ?? context.createMediaElementSource(audio);
-      if (!sourceRef.current) {
-        source.connect(analyser);
-        analyser.connect(context.destination);
-        sourceRef.current = source;
-      }
-      const data = new Uint8Array(analyser.frequencyBinCount);
-
-      const tick = () => {
-        analyser.getByteFrequencyData(data);
-        const bucketSize = Math.max(1, Math.floor(data.length / 18));
-        const nextLevels = Array.from({ length: 18 }, (_, index) => {
-          const start = index * bucketSize;
-          const bucket = data.slice(start, start + bucketSize);
-          const average = bucket.reduce((sum, value) => sum + value, 0) / Math.max(1, bucket.length);
-          return average / 255;
-        });
-        setLevels(nextLevels);
-        frame = window.requestAnimationFrame(tick);
-      };
-
-      void context.resume();
-      tick();
-    } catch {
-      setLevels([]);
-    }
-
-    return () => {
-      if (frame) {
-        window.cancelAnimationFrame(frame);
-      }
-    };
-  }, [audioRef, questionId, audioUrl]);
-
-  return levels;
-}
-
-function canAnalyzeAudioUrl(value: string): boolean {
-  try {
-    const url = new URL(value, window.location.origin);
-    return url.origin === window.location.origin || url.protocol === 'blob:' || url.protocol === 'data:';
-  } catch {
-    return false;
-  }
 }
 
 function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, serverTime: number) {
