@@ -345,6 +345,13 @@ select:focus {
   white-space: nowrap;
 }
 
+.icon-only {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
 .start-button {
   min-width: 190px;
 }
@@ -422,6 +429,43 @@ select:focus {
   width: 16px;
   min-height: 16px;
   accent-color: #477f75;
+}
+
+.playlist-input-row {
+  display: grid;
+  grid-template-columns: 1fr 44px;
+  gap: 8px;
+}
+
+.playlist-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.playlist-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #c3b6a3;
+  border-radius: 8px;
+  background: #ded4c4;
+}
+
+.playlist-item span {
+  font-weight: 900;
+  color: #3b342a;
+}
+
+.playlist-item small {
+  min-width: 0;
+  overflow: hidden;
+  color: #706754;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .notice {
@@ -844,6 +888,19 @@ select:focus {
   color: #dbe7f6;
   background: #203044;
   border-color: #334860;
+}
+
+:root[data-theme="dark"] .playlist-item {
+  background: #203044;
+  border-color: #334860;
+}
+
+:root[data-theme="dark"] .playlist-item span {
+  color: #dbe7f6;
+}
+
+:root[data-theme="dark"] .playlist-item small {
+  color: #9eb0c7;
 }
 
 :root[data-theme="dark"] .danger {

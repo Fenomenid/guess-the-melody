@@ -41,6 +41,7 @@ type PlayerInput = {
 const DEFAULT_SETTINGS: RoomSettings = {
   themeId: 'chart-russia',
   themeIds: ['chart-russia'],
+  playlistUrls: [],
   winCondition: 'rounds',
   rounds: 5,
   targetScore: 3000,
@@ -93,9 +94,13 @@ export class GameEngine {
       throw new Error('Settings can only be changed in lobby');
     }
 
-    const playlistUrl = sanitizeOptionalUrl(settings.playlistUrl ?? room.settings.playlistUrl);
+    const playlistUrls = sanitizePlaylistUrls(
+      settings.playlistUrls ??
+        (settings.playlistUrl !== undefined ? [settings.playlistUrl] : room.settings.playlistUrls ?? (room.settings.playlistUrl ? [room.settings.playlistUrl] : []))
+    );
+    const playlistUrl = playlistUrls[0];
     const requestedThemeIds = settings.themeIds ?? (settings.themeId ? [settings.themeId] : room.settings.themeIds ?? [room.settings.themeId]);
-    const themeIds = sanitizeThemeIds(requestedThemeIds, Boolean(playlistUrl));
+    const themeIds = sanitizeThemeIds(requestedThemeIds, playlistUrls.length > 0);
 
     room.settings = {
       ...room.settings,
@@ -103,6 +108,7 @@ export class GameEngine {
       themeIds,
       themeId: themeIds[0] ?? room.settings.themeId ?? DEFAULT_SETTINGS.themeId,
       playlistUrl,
+      playlistUrls,
       winCondition: settings.winCondition === 'score' ? 'score' : settings.winCondition === 'rounds' ? 'rounds' : room.settings.winCondition,
       rounds: clampInteger(settings.rounds ?? room.settings.rounds, 1, 20),
       targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 20_000),
@@ -421,15 +427,24 @@ function sanitizeOptionalUrl(value: string | undefined): string | undefined {
   return /^https?:\/\//i.test(trimmed) ? trimmed.slice(0, 600) : undefined;
 }
 
+function sanitizePlaylistUrls(value: string[] | undefined): string[] {
+  const urls = (value ?? [])
+    .map((url) => sanitizeOptionalUrl(url))
+    .filter((url): url is string => Boolean(url));
+  return [...new Set(urls)].slice(0, 8);
+}
+
 function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
-  const playlistUrl = sanitizeOptionalUrl(settings.playlistUrl);
-  const themeIds = sanitizeThemeIds(settings.themeIds ?? [settings.themeId ?? DEFAULT_SETTINGS.themeId], Boolean(playlistUrl));
+  const playlistUrls = sanitizePlaylistUrls(settings.playlistUrls ?? (settings.playlistUrl ? [settings.playlistUrl] : []));
+  const playlistUrl = playlistUrls[0];
+  const themeIds = sanitizeThemeIds(settings.themeIds ?? [settings.themeId ?? DEFAULT_SETTINGS.themeId], playlistUrls.length > 0);
   return {
     ...DEFAULT_SETTINGS,
     ...settings,
     themeIds,
     themeId: themeIds[0] ?? settings.themeId ?? DEFAULT_SETTINGS.themeId,
     playlistUrl,
+    playlistUrls,
     winCondition: settings.winCondition === 'score' ? 'score' : 'rounds',
     rounds: clampInteger(settings.rounds ?? DEFAULT_SETTINGS.rounds, 1, 20),
     targetScore: clampInteger(settings.targetScore ?? DEFAULT_SETTINGS.targetScore, 500, 20_000),

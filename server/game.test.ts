@@ -138,6 +138,26 @@ describe('GameEngine', () => {
     expect(room.settings.themeId).toBe('chart-russia');
   });
 
+  it('allows playlist-only settings with multiple playlist URLs', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+
+    const room = engine.updateSettings('ROOM42', {
+      playlistUrls: [
+        'https://music.yandex.ru/users/example/playlists/1000',
+        'https://music.yandex.ru/users/example/playlists/2000'
+      ],
+      themeIds: []
+    });
+
+    expect(room.settings.playlistUrls).toEqual([
+      'https://music.yandex.ru/users/example/playlists/1000',
+      'https://music.yandex.ru/users/example/playlists/2000'
+    ]);
+    expect(room.settings.playlistUrl).toBe('https://music.yandex.ru/users/example/playlists/1000');
+    expect(room.settings.themeIds).toEqual([]);
+  });
+
   it('falls back to a default theme when playlist URL is cleared with no themes selected', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });

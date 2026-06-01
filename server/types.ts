@@ -60,6 +60,7 @@ export type RoomSettings = {
   themeId: string;
   themeIds: string[];
   playlistUrl?: string;
+  playlistUrls?: string[];
   winCondition: 'rounds' | 'score';
   rounds: number;
   targetScore: number;

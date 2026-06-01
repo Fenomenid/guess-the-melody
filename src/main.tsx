@@ -8,6 +8,7 @@ import {
   Moon,
   Music2,
   Play,
+  Plus,
   Radio,
   RotateCcw,
   Sun,
@@ -16,7 +17,8 @@ import {
   UserMinus,
   Users,
   Volume2,
-  VolumeX
+  VolumeX,
+  X
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -51,6 +53,7 @@ type Room = {
     themeId: string;
     themeIds: string[];
     playlistUrl?: string;
+    playlistUrls?: string[];
     winCondition: 'rounds' | 'score';
     rounds: number;
     targetScore: number;
@@ -471,14 +474,13 @@ function Lobby({
   const [roundsDraft, setRoundsDraft] = useState(String(room.settings.rounds));
   const [targetScoreDraft, setTargetScoreDraft] = useState(String(room.settings.targetScore));
   const [secondsDraft, setSecondsDraft] = useState(String(room.settings.questionDurationMs / 1000));
-  const [playlistDraft, setPlaylistDraft] = useState(room.settings.playlistUrl ?? '');
+  const [playlistDraft, setPlaylistDraft] = useState('');
 
   useEffect(() => {
     setRoundsDraft(String(room.settings.rounds));
     setTargetScoreDraft(String(room.settings.targetScore));
     setSecondsDraft(String(room.settings.questionDurationMs / 1000));
-    setPlaylistDraft(room.settings.playlistUrl ?? '');
-  }, [room.settings.rounds, room.settings.targetScore, room.settings.questionDurationMs, room.settings.playlistUrl]);
+  }, [room.settings.rounds, room.settings.targetScore, room.settings.questionDurationMs]);
 
   function commitRounds() {
     const value = Number(roundsDraft);
@@ -507,11 +509,20 @@ function Lobby({
     }
   }
 
-  function commitPlaylistUrl() {
+  function addPlaylistUrl() {
     const playlistUrl = playlistDraft.trim();
-    if ((room.settings.playlistUrl ?? '') !== playlistUrl) {
-      onSettingsChange({ playlistUrl });
+    if (!playlistUrl || selectedPlaylistUrls.includes(playlistUrl)) {
+      setPlaylistDraft('');
+      return;
     }
+    const playlistUrls = [...selectedPlaylistUrls, playlistUrl].slice(0, 8);
+    onSettingsChange({ playlistUrls, playlistUrl: playlistUrls[0] });
+    setPlaylistDraft('');
+  }
+
+  function removePlaylistUrl(playlistUrl: string) {
+    const playlistUrls = selectedPlaylistUrls.filter((url) => url !== playlistUrl);
+    onSettingsChange({ playlistUrls, playlistUrl: playlistUrls[0] ?? '' });
   }
 
   function toggleTheme(themeId: string) {
@@ -520,18 +531,23 @@ function Lobby({
       ? currentThemeIds.filter((id) => id !== themeId)
       : [...currentThemeIds, themeId];
     const playlistUrl = playlistDraft.trim();
-    const hasPlaylistSource = Boolean(playlistUrl || room.settings.playlistUrl);
+    const nextPlaylistUrls = playlistUrl && !selectedPlaylistUrls.includes(playlistUrl) ? [...selectedPlaylistUrls, playlistUrl].slice(0, 8) : selectedPlaylistUrls;
+    const hasPlaylistSource = nextPlaylistUrls.length > 0;
 
     if (nextThemeIds.length > 0 || hasPlaylistSource) {
       onSettingsChange({
         themeIds: nextThemeIds,
-        ...(playlistUrl && playlistUrl !== (room.settings.playlistUrl ?? '') ? { playlistUrl } : {})
+        ...(playlistUrl ? { playlistUrls: nextPlaylistUrls, playlistUrl: nextPlaylistUrls[0] } : {})
       });
+      if (playlistUrl) {
+        setPlaylistDraft('');
+      }
     }
   }
 
+  const selectedPlaylistUrls = room.settings.playlistUrls?.length ? room.settings.playlistUrls : room.settings.playlistUrl ? [room.settings.playlistUrl] : [];
   const selectedThemeIds = room.settings.themeIds ?? [room.settings.themeId];
-  const hasPlaylistSource = Boolean(playlistDraft.trim() || room.settings.playlistUrl);
+  const hasPlaylistSource = Boolean(playlistDraft.trim() || selectedPlaylistUrls.length > 0);
 
   return (
     <div className="stage lobby-stage">
@@ -559,15 +575,44 @@ function Lobby({
             ))}
           </div>
         </label>
-        <label className="field">
-          <span>Плейлист</span>
-          <input
-            disabled={!isHost || isBusy}
-            value={playlistDraft}
-            onBlur={commitPlaylistUrl}
-            onChange={(event) => setPlaylistDraft(event.target.value)}
-            placeholder="https://music.yandex.ru/users/.../playlists/..."
-          />
+        <label className="field wide-field">
+          <span>Плейлисты</span>
+          <div className="playlist-input-row">
+            <input
+              disabled={!isHost || isBusy || selectedPlaylistUrls.length >= 8}
+              value={playlistDraft}
+              onChange={(event) => setPlaylistDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  addPlaylistUrl();
+                }
+              }}
+              placeholder="https://music.yandex.ru/users/.../playlists/..."
+            />
+            <button className="secondary icon-only" type="button" disabled={!isHost || isBusy || !playlistDraft.trim()} onClick={addPlaylistUrl} aria-label="Добавить плейлист">
+              <Plus size={18} />
+            </button>
+          </div>
+          {selectedPlaylistUrls.length > 0 && (
+            <div className="playlist-list">
+              {selectedPlaylistUrls.map((playlistUrl, index) => (
+                <div className="playlist-item" key={playlistUrl}>
+                  <span>Плейлист {index + 1}</span>
+                  <small>{playlistUrl}</small>
+                  <button
+                    className="kick-button"
+                    type="button"
+                    disabled={!isHost || isBusy}
+                    onClick={() => removePlaylistUrl(playlistUrl)}
+                    aria-label={`Удалить плейлист ${index + 1}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </label>
         <label className="field">
           <span>Условие победы</span>
@@ -629,10 +674,10 @@ function Lobby({
         <div className="notice">
           <Radio size={18} />
           <span>
-            {playlistDraft.trim()
+            {hasPlaylistSource
               ? selectedThemeIds.length === 0
-                ? 'Плейлист будет единственным источником треков. Аудио проверяется только для нужного количества раундов.'
-                : 'Плейлист добавится к выбранным темам. Аудио проверяется только для нужного количества раундов.'
+                ? `Плейлисты будут единственным источником треков: ${selectedPlaylistUrls.length || 1}. Аудио проверяется только для нужного количества раундов.`
+                : `Плейлисты добавятся к выбранным темам: ${selectedPlaylistUrls.length || 1}. Аудио проверяется только для нужного количества раундов.`
               : selectedThemeIds.length > 1
                 ? `Выбрано тем: ${selectedThemeIds.length}`
                 : themes.find((theme) => theme.id === selectedThemeIds[0])?.description ?? 'Треки подбираются из Яндекс Музыки'}

@@ -81,6 +81,7 @@ type TrackSourceInput =
   | {
       themeIds?: string[];
       playlistUrl?: string;
+      playlistUrls?: string[];
     };
 
 export type TrackPool = {
@@ -229,11 +230,11 @@ export class MusicService {
   }
 
   async prepareTrackPool(source: TrackSourceInput, options: { playableLimit: number; optionLimit: number }): Promise<TrackPool> {
-    const playlistUrl = typeof source === 'string' ? undefined : source.playlistUrl;
+    const playlistUrls = typeof source === 'string' ? [] : source.playlistUrls?.length ? source.playlistUrls : source.playlistUrl ? [source.playlistUrl] : [];
     const themeIds =
       typeof source === 'string'
         ? [source]
-        : source.themeIds && (source.themeIds.length > 0 || playlistUrl)
+        : source.themeIds && (source.themeIds.length > 0 || playlistUrls.length > 0)
           ? source.themeIds
           : ['chart-russia'];
 
@@ -242,7 +243,7 @@ export class MusicService {
     }
 
     try {
-      const candidates = uniqueByTrackId(shuffle(await this.getSourceCandidates(themeIds, playlistUrl)));
+      const candidates = uniqueByTrackId(shuffle(await this.getSourceCandidates(themeIds, playlistUrls)));
       const optionTracks = uniqueByTitle(candidates.map(toTrackMetadata)).slice(0, options.optionLimit);
       const playableTracks: Track[] = [];
       const stats = createTrackLoadStats(candidates.length, optionTracks.length);
@@ -333,11 +334,14 @@ export class MusicService {
     return uniqueByTrackId(tracks);
   }
 
-  private async getSourceCandidates(themeIds: string[], playlistUrl?: string): Promise<YandexTrack[]> {
+  private async getSourceCandidates(themeIds: string[], playlistUrls: string[] = []): Promise<YandexTrack[]> {
     const tracks: YandexTrack[] = [];
 
-    if (playlistUrl) {
+    for (const playlistUrl of playlistUrls) {
       tracks.push(...(await this.getPlaylistUrlCandidates(playlistUrl)));
+      if (tracks.length >= 260) {
+        break;
+      }
     }
 
     for (const themeId of themeIds) {

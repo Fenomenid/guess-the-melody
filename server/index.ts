@@ -96,6 +96,7 @@ io.on('connection', (socket) => {
       const pool = await music.prepareTrackPool(
         {
           themeIds: preparingRoom.settings.themeIds,
+          playlistUrls: preparingRoom.settings.playlistUrls,
           playlistUrl: preparingRoom.settings.playlistUrl
         },
         {
@@ -236,6 +237,7 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
     themeId: typeof raw.themeId === 'string' ? raw.themeId : undefined,
     themeIds: Array.isArray(raw.themeIds) ? raw.themeIds.filter((item): item is string => typeof item === 'string') : undefined,
     playlistUrl: typeof raw.playlistUrl === 'string' ? raw.playlistUrl : undefined,
+    playlistUrls: Array.isArray(raw.playlistUrls) ? raw.playlistUrls.filter((item): item is string => typeof item === 'string') : undefined,
     winCondition: raw.winCondition === 'score' || raw.winCondition === 'rounds' ? raw.winCondition : undefined,
     rounds: typeof raw.rounds === 'number' ? raw.rounds : undefined,
     targetScore: typeof raw.targetScore === 'number' ? raw.targetScore : undefined,
