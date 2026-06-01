@@ -30,10 +30,10 @@ Open: http://127.0.0.1:3001
 
 ## Render Yandex Music Diagnostics
 
-After deployment, open:
+After deployment, open the diagnostics endpoint on your deployed service:
 
 ```text
-https://guess-the-melody.onrender.com/api/music/diagnostics
+https://<your-render-service>/api/music/diagnostics
 ```
 
 Useful fields:
