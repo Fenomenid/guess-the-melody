@@ -749,7 +749,7 @@ function QuestionStage({
   const question = room.currentQuestion!;
   const countdown = useQuestionCountdown(question, room.serverTime);
   const [audioIssue, setAudioIssue] = useState('');
-  const levels = useAudioLevels(audioRef, question.id);
+  const levels = useAudioLevels(audioRef, question.id, question.audioUrl);
 
   function playAudio() {
     const audio = audioRef.current;
@@ -1008,7 +1008,7 @@ function Equalizer({ levels }: { levels?: number[] }) {
   );
 }
 
-function useAudioLevels(audioRef: React.MutableRefObject<HTMLAudioElement | null>, questionId: string): number[] {
+function useAudioLevels(audioRef: React.MutableRefObject<HTMLAudioElement | null>, questionId: string, audioUrl: string): number[] {
   const [levels, setLevels] = useState<number[]>([]);
   const contextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -1017,7 +1017,7 @@ function useAudioLevels(audioRef: React.MutableRefObject<HTMLAudioElement | null
   useEffect(() => {
     let frame = 0;
     const audio = audioRef.current;
-    if (!audio) {
+    if (!audio || !canAnalyzeAudioUrl(audioUrl)) {
       setLevels([]);
       return undefined;
     }
@@ -1067,9 +1067,18 @@ function useAudioLevels(audioRef: React.MutableRefObject<HTMLAudioElement | null
         window.cancelAnimationFrame(frame);
       }
     };
-  }, [audioRef, questionId]);
+  }, [audioRef, questionId, audioUrl]);
 
   return levels;
+}
+
+function canAnalyzeAudioUrl(value: string): boolean {
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.origin === window.location.origin || url.protocol === 'blob:' || url.protocol === 'data:';
+  } catch {
+    return false;
+  }
 }
 
 function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, serverTime: number) {
