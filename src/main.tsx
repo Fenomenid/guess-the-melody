@@ -292,13 +292,17 @@ function App() {
     }
   }
 
-  function emit<T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label = '') {
+  function emit<T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label = '', options: { silent?: boolean } = {}) {
     setError('');
-    setBusyLabel(label);
-    setIsBusy(true);
+    if (!options.silent) {
+      setBusyLabel(label);
+      setIsBusy(true);
+    }
     socket.timeout(12_000).emit(event, payload, (timeoutError: Error | null, response?: { data?: T; error?: string }) => {
-      setIsBusy(false);
-      setBusyLabel('');
+      if (!options.silent) {
+        setIsBusy(false);
+        setBusyLabel('');
+      }
       if (timeoutError) {
         setError('Сервер не ответил. Проверьте соединение, игра попробует восстановиться автоматически.');
         return;
@@ -343,7 +347,7 @@ function App() {
 
   function updateSettings(settings: Partial<Room['settings']>) {
     if (!room) return;
-    emit<Room>('update_settings', { code: room.code, playerId, settings }, setRoom, 'Обновляем настройки');
+    emit<Room>('update_settings', { code: room.code, playerId, settings }, setRoom, 'Обновляем настройки', { silent: true });
   }
 
   function submitAnswer(optionId: string) {
