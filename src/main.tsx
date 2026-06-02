@@ -1,23 +1,30 @@
 import {
   Copy,
   Crown,
+  Brain,
   DoorOpen,
   KeyRound,
   LoaderCircle,
   LogIn,
+  Medal,
   Moon,
   Music2,
   Play,
   Plus,
   Radio,
+  Repeat2,
   RotateCcw,
+  Skull,
+  Sparkles,
   Sun,
+  Target,
   Timer,
   Trophy,
   UserMinus,
   Users,
   Volume2,
   VolumeX,
+  Zap,
   X
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -252,6 +259,9 @@ function App() {
       setIsBusy(false);
       setBusyLabel('');
       if (response.error) {
+        if (event === 'submit_answer' && (response.error === 'No active question' || response.error === 'Answer deadline has passed')) {
+          return;
+        }
         setError(response.error);
         return;
       }
@@ -1066,7 +1076,7 @@ function QuestionStage({
         <span>{me?.lastAnswer ? 'Ответ принят' : 'Выберите название трека'}</span>
       </div>
 
-      <AchievementShelf achievements={room.achievements} />
+      <AchievementShelf achievements={room.achievements} title="События" compact />
 
       <div className="music-visual">
         <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
@@ -1158,7 +1168,7 @@ function ResultStage({
           </div>
         </div>
       )}
-      <AchievementShelf achievements={room.achievements} title="Ачивки раунда" />
+      <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact />
       <div className="result-list">
         {room.players.map((player, index) => (
           <div className="score-row" key={player.id}>
@@ -1263,13 +1273,13 @@ function FinalStage({
   );
 }
 
-function AchievementShelf({ achievements, title = 'Ачивки' }: { achievements: Achievement[]; title?: string }) {
+function AchievementShelf({ achievements, title = 'Ачивки', compact = false }: { achievements: Achievement[]; title?: string; compact?: boolean }) {
   if (achievements.length === 0) {
     return null;
   }
 
   return (
-    <section className="achievement-shelf" aria-label={title}>
+    <section className={['achievement-shelf', compact ? 'compact' : ''].filter(Boolean).join(' ')} aria-label={title}>
       <div className="achievement-title">
         <Trophy size={16} />
         <span>{title}</span>
@@ -1277,12 +1287,10 @@ function AchievementShelf({ achievements, title = 'Ачивки' }: { achievemen
       <div className="achievement-list">
         {achievements.map((achievement) => (
           <article className={`achievement-card ${achievement.tone}`} key={achievement.id}>
-            <span className="achievement-icon" aria-hidden="true">
-              {achievement.icon}
-            </span>
+            <AchievementIcon achievement={achievement} />
             <div>
               <strong>{achievement.title}</strong>
-              <small>{achievement.description}</small>
+              {!compact && <small>{achievement.description}</small>}
             </div>
           </article>
         ))}
@@ -1305,9 +1313,7 @@ function MatchMoments({ moments }: { moments: MatchMoment[] }) {
       <div className="moment-list">
         {moments.map((moment) => (
           <article className={`achievement-card moment-card ${moment.tone}`} key={moment.id}>
-            <span className="achievement-icon" aria-hidden="true">
-              {moment.icon}
-            </span>
+            <AchievementIcon achievement={moment} />
             <div>
               <strong>{moment.title}</strong>
               <small>
@@ -1319,6 +1325,27 @@ function MatchMoments({ moments }: { moments: MatchMoment[] }) {
       </div>
     </section>
   );
+}
+
+function AchievementIcon({ achievement }: { achievement: Achievement }) {
+  const Icon = getAchievementIcon(achievement);
+  return (
+    <span className={`achievement-icon ${achievement.tone}`} aria-hidden="true">
+      <Icon size={21} strokeWidth={2.5} />
+    </span>
+  );
+}
+
+function getAchievementIcon(achievement: Achievement) {
+  const text = `${achievement.icon} ${achievement.title}`.toLowerCase();
+  if (text.includes('⚡') || text.includes('быстр') || text.includes('кноп')) return Zap;
+  if (text.includes('🎯') || text.includes('угад') || text.includes('попал')) return Target;
+  if (text.includes('💀') || text.includes('промах') || text.includes('свидет')) return Skull;
+  if (text.includes('🔁') || text.includes('↔') || text.includes('пере') || text.includes('рулет')) return Repeat2;
+  if (text.includes('🧠') || text.includes('мозг')) return Brain;
+  if (text.includes('🏆') || text.includes('лучший')) return Trophy;
+  if (text.includes('✓') || text.includes('все')) return Medal;
+  return Sparkles;
 }
 
 function ConfirmModal({ dialog, onClose }: { dialog: ConfirmDialogState; onClose: () => void }) {
