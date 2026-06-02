@@ -865,9 +865,18 @@ function toTrackMetadata(track: YandexTrack): TrackMetadata {
     title: track.title,
     artist: track.artists?.map((artist) => artist.name).join(', ') || 'Неизвестный исполнитель',
     coverUrl: normalizeCoverUrl(track.coverUri),
+    trackUrl: yandexTrackUrl(track),
     sourceName: track.sourceName,
     sourceUrl: track.sourceUrl
   };
+}
+
+function yandexTrackUrl(track: YandexTrack): string | undefined {
+  const albumId = track.albums?.[0]?.id;
+  if (!albumId) {
+    return undefined;
+  }
+  return `https://music.yandex.ru/album/${encodeURIComponent(String(albumId))}/track/${encodeURIComponent(String(track.id))}`;
 }
 
 function normalizePlaylistSources(sources?: PlaylistSource[], urls?: string[], url?: string): PlaylistSource[] {

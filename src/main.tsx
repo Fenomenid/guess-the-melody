@@ -84,6 +84,7 @@ type Room = {
     title: string;
     artist: string;
     coverUrl?: string;
+    trackUrl?: string;
     sourceName?: string;
     sourceUrl?: string;
   };
@@ -527,7 +528,7 @@ function Lobby({
   const [secondsDraft, setSecondsDraft] = useState(String(room.settings.questionDurationMs / 1000));
   const [playlistDraft, setPlaylistDraft] = useState('');
   const [playlistNameDraft, setPlaylistNameDraft] = useState('');
-  const [playlistSearchDraft, setPlaylistSearchDraft] = useState('новинки');
+  const [playlistSearchDraft, setPlaylistSearchDraft] = useState('');
   const [playlistSearchPage, setPlaylistSearchPage] = useState(0);
   const [playlistSearchResults, setPlaylistSearchResults] = useState<PlaylistSearchItem[]>([]);
   const [playlistSearchLoading, setPlaylistSearchLoading] = useState(false);
@@ -1056,6 +1057,11 @@ function ResultStage({
             <strong>{room.correctTrack.title}</strong>
             <span>{room.correctTrack.artist}</span>
             {room.correctTrack.sourceName && <small>Источник: {room.correctTrack.sourceName}</small>}
+            {room.correctTrack.trackUrl && (
+              <a className="track-link" href={room.correctTrack.trackUrl} target="_blank" rel="noreferrer">
+                Открыть в Яндекс Музыке
+              </a>
+            )}
           </div>
         </div>
       )}

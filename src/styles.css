@@ -897,6 +897,20 @@ select:focus {
   font-weight: 800;
 }
 
+.track-link {
+  width: fit-content;
+  display: inline-flex;
+  margin-top: 8px;
+  color: #477f75;
+  font-size: 14px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.track-link:hover {
+  text-decoration: underline;
+}
+
 .result-list {
   width: min(680px, 100%);
   display: grid;
@@ -1262,6 +1276,10 @@ select:focus {
 :root[data-theme="dark"] .playlist-search-item small,
 :root[data-theme="dark"] .search-error {
   color: #9eb0c7;
+}
+
+:root[data-theme="dark"] .track-link {
+  color: #7dd8a6;
 }
 
 :root[data-theme="dark"] .track-cover {

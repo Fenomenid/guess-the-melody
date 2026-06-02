@@ -17,6 +17,7 @@ export type TrackMetadata = {
   title: string;
   artist: string;
   coverUrl?: string;
+  trackUrl?: string;
   sourceName?: string;
   sourceUrl?: string;
 };
