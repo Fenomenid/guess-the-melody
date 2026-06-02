@@ -746,6 +746,7 @@ function Lobby({
   const selectedPlaylistUrls = selectedPlaylistSources.map((source) => source.url);
   const selectedThemeIds = room.settings.themeIds ?? [room.settings.themeId];
   const hasPlaylistSource = selectedPlaylistSources.length > 0;
+  const hasMusicSource = hasPlaylistSource || selectedThemeIds.length > 0;
 
   return (
     <div className="stage lobby-stage">
@@ -919,10 +920,10 @@ function Lobby({
           <span>Быстрые темы</span>
           <div className="theme-picker">
             {themes.map((theme) => (
-              <label className="theme-choice" key={theme.id}>
+              <label className={['theme-choice', selectedThemeIds.includes(theme.id) ? 'active' : ''].filter(Boolean).join(' ')} key={theme.id}>
                 <input
                   type="checkbox"
-                  disabled={!isHost || isBusy || (!hasPlaylistSource && selectedThemeIds.length === 1 && selectedThemeIds.includes(theme.id))}
+                  disabled={!isHost || isBusy}
                   checked={selectedThemeIds.includes(theme.id)}
                   onChange={() => toggleTheme(theme.id)}
                 />
@@ -1051,7 +1052,7 @@ function Lobby({
 
       <div className="actions">
         {isHost ? (
-          <button className="primary start-button" onClick={onStart} disabled={isBusy}>
+          <button className="primary start-button" onClick={onStart} disabled={isBusy || !hasMusicSource}>
             {isBusy ? <LoaderCircle className="spin" size={18} /> : <Play size={18} />}
             Начать раунд
           </button>
