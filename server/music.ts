@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import type { PlaylistSource, Theme, Track, TrackMetadata } from './types';
+import type { PlaylistSearchItem, PlaylistSource, Theme, Track, TrackMetadata } from './types';
 
 const YANDEX_API_BASE = 'https://api.music.yandex.net';
 const DOWNLOAD_SIGN_SALT = 'XGRlBW9FXlekgbPrRHuSiA';
@@ -30,6 +30,8 @@ type YandexPlaylist = {
   owner?: { id?: string | number; uid?: string | number };
   playlistId?: string;
   id?: string;
+  title?: string;
+  description?: string;
   tracks?: Array<YandexTrack | YandexTrackShort>;
 };
 
@@ -61,6 +63,9 @@ type StationTracksResult = {
 type SearchResult = {
   tracks?: {
     results?: YandexTrack[];
+  };
+  playlists?: {
+    results?: YandexPlaylist[];
   };
 };
 
@@ -313,6 +318,22 @@ export class MusicService {
       optionLimit: Math.max(32, minimum * 4)
     });
     return pool.playableTracks;
+  }
+
+  async searchPlaylists(query: string, page = 0, limit = 8): Promise<PlaylistSearchItem[]> {
+    const text = query.trim();
+    if (!text) {
+      return [];
+    }
+
+    const result = await this.get<SearchResult>(
+      `/search?${new URLSearchParams({
+        text,
+        type: 'playlist',
+        page: String(Math.max(0, page))
+      })}`
+    );
+    return uniquePlaylistSearchItems(result.playlists?.results ?? []).slice(0, Math.max(1, Math.min(20, limit)));
   }
 
   async probe(
@@ -864,6 +885,45 @@ function normalizePlaylistSources(sources?: PlaylistSource[], urls?: string[], u
     url: playlistUrl,
     name: /\/album\//i.test(playlistUrl) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`
   }));
+}
+
+function uniquePlaylistSearchItems(playlists: YandexPlaylist[]): PlaylistSearchItem[] {
+  const seen = new Set<string>();
+  const items: PlaylistSearchItem[] = [];
+
+  for (const playlist of playlists) {
+    const url = yandexPlaylistUrl(playlist);
+    if (!url || seen.has(url)) {
+      continue;
+    }
+    seen.add(url);
+    items.push({
+      id: String(playlist.playlistId ?? playlist.id ?? url),
+      url,
+      name: normalizeWhitespace(playlist.title) || `Плейлист ${items.length + 1}`,
+      description: normalizeWhitespace(playlist.description)?.slice(0, 140)
+    });
+  }
+
+  return items;
+}
+
+function yandexPlaylistUrl(playlist: YandexPlaylist): string | undefined {
+  const uid = playlist.owner?.id ?? playlist.owner?.uid ?? playlist.uid;
+  const kind = playlist.kind;
+  if (uid && kind) {
+    return `https://music.yandex.ru/users/${encodeURIComponent(String(uid))}/playlists/${encodeURIComponent(String(kind))}`;
+  }
+  const playlistId = playlist.playlistId ?? playlist.id;
+  if (playlistId) {
+    return `https://music.yandex.ru/playlists/${encodeURIComponent(String(playlistId))}`;
+  }
+  return undefined;
+}
+
+function normalizeWhitespace(value?: string): string | undefined {
+  const normalized = value?.trim().replace(/\s+/g, ' ');
+  return normalized || undefined;
 }
 
 function uniqueByTrackId<T extends { id: string | number }>(items: T[]): T[] {

@@ -47,6 +47,18 @@ app.get('/api/themes', (_request, response) => {
   response.json({ data: music.getThemes() });
 });
 
+app.get('/api/music/playlists/search', async (request, response) => {
+  const query = typeof request.query.q === 'string' ? request.query.q : '';
+  const page = clampPage(Number(request.query.page));
+  const limit = clampProbeLimit(Number(request.query.limit));
+  try {
+    const results = await music.searchPlaylists(query, page, limit);
+    response.json({ data: { query: query.trim(), page, results } });
+  } catch (error) {
+    response.status(502).json({ error: toClientError(error) });
+  }
+});
+
 app.get('/api/music/diagnostics', (_request, response) => {
   response.json({ data: music.diagnostics() });
 });
@@ -432,6 +444,13 @@ function clampProbeLimit(value: number): number {
     return 5;
   }
   return Math.max(1, Math.min(20, Math.round(value)));
+}
+
+function clampPage(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(20, Math.round(value)));
 }
 
 function estimateRoundsForScore(targetScore: number): number {

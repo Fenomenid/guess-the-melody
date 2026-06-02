@@ -46,6 +46,11 @@ type PlaylistSource = {
   name: string;
 };
 
+type PlaylistSearchItem = PlaylistSource & {
+  id: string;
+  description?: string;
+};
+
 type Room = {
   code: string;
   status: 'lobby' | 'preparing' | 'question' | 'round-result' | 'finished';
@@ -516,6 +521,11 @@ function Lobby({
   const [secondsDraft, setSecondsDraft] = useState(String(room.settings.questionDurationMs / 1000));
   const [playlistDraft, setPlaylistDraft] = useState('');
   const [playlistNameDraft, setPlaylistNameDraft] = useState('');
+  const [playlistSearchDraft, setPlaylistSearchDraft] = useState('новинки');
+  const [playlistSearchPage, setPlaylistSearchPage] = useState(0);
+  const [playlistSearchResults, setPlaylistSearchResults] = useState<PlaylistSearchItem[]>([]);
+  const [playlistSearchLoading, setPlaylistSearchLoading] = useState(false);
+  const [playlistSearchError, setPlaylistSearchError] = useState('');
 
   useEffect(() => {
     setRoundsDraft(String(room.settings.rounds));
@@ -567,6 +577,37 @@ function Lobby({
     syncPlaylistSources(nextSources);
     setPlaylistDraft('');
     setPlaylistNameDraft('');
+  }
+
+  function addPlaylistSource(source: PlaylistSource) {
+    if (!source.url || selectedPlaylistSources.some((selected) => selected.url === source.url)) {
+      return;
+    }
+    syncPlaylistSources([...selectedPlaylistSources, source].slice(0, 10));
+  }
+
+  async function searchPlaylists(page = 0) {
+    const query = playlistSearchDraft.trim();
+    if (!query) {
+      setPlaylistSearchResults([]);
+      setPlaylistSearchError('');
+      return;
+    }
+    setPlaylistSearchLoading(true);
+    setPlaylistSearchError('');
+    try {
+      const response = await fetch(`/api/music/playlists/search?${new URLSearchParams({ q: query, page: String(page), limit: '8' })}`);
+      const payload = (await response.json()) as { data?: { results?: PlaylistSearchItem[] }; error?: string };
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || 'Не удалось найти плейлисты');
+      }
+      setPlaylistSearchPage(page);
+      setPlaylistSearchResults((current) => (page === 0 ? payload.data?.results ?? [] : [...current, ...(payload.data?.results ?? [])]));
+    } catch (error) {
+      setPlaylistSearchError(error instanceof Error ? error.message : 'Не удалось найти плейлисты');
+    } finally {
+      setPlaylistSearchLoading(false);
+    }
   }
 
   function removePlaylistUrl(playlistUrl: string) {
@@ -682,9 +723,57 @@ function Lobby({
               ))}
             </div>
           )}
+          <div className="playlist-search">
+            <div className="playlist-search-row">
+              <input
+                disabled={!isHost || isBusy}
+                value={playlistSearchDraft}
+                onChange={(event) => setPlaylistSearchDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void searchPlaylists(0);
+                  }
+                }}
+                placeholder="Поиск плейлистов Яндекс Музыки"
+              />
+              <button className="secondary icon-text" type="button" disabled={!isHost || isBusy || playlistSearchLoading} onClick={() => void searchPlaylists(0)}>
+                {playlistSearchLoading ? <LoaderCircle className="spin" size={18} /> : <Radio size={18} />}
+                Найти
+              </button>
+            </div>
+            {playlistSearchError && <small className="search-error">{playlistSearchError}</small>}
+            {playlistSearchResults.length > 0 && (
+              <div className="playlist-search-results">
+                {playlistSearchResults.map((source) => {
+                  const added = selectedPlaylistUrls.includes(source.url);
+                  return (
+                    <div className="playlist-search-item" key={`${source.id}:${source.url}`}>
+                      <div>
+                        <strong>{source.name}</strong>
+                        {source.description && <small>{source.description}</small>}
+                      </div>
+                      <button
+                        className="secondary icon-text"
+                        type="button"
+                        disabled={!isHost || isBusy || added || selectedPlaylistUrls.length >= 10}
+                        onClick={() => addPlaylistSource({ url: source.url, name: source.name })}
+                      >
+                        <Plus size={16} />
+                        {added ? 'Добавлен' : 'Добавить'}
+                      </button>
+                    </div>
+                  );
+                })}
+                <button className="secondary" type="button" disabled={!isHost || isBusy || playlistSearchLoading} onClick={() => void searchPlaylists(playlistSearchPage + 1)}>
+                  Показать еще
+                </button>
+              </div>
+            )}
+          </div>
         </label>
         <label className="field">
-          <span>Тема</span>
+          <span>Быстрые темы</span>
           <div className="theme-picker">
             {themes.map((theme) => (
               <label className="theme-choice" key={theme.id}>

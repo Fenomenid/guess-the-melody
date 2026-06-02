@@ -66,6 +66,11 @@ export type PlaylistSource = {
   name: string;
 };
 
+export type PlaylistSearchItem = PlaylistSource & {
+  id: string;
+  description?: string;
+};
+
 export type RoomSettings = {
   themeId: string;
   themeIds: string[];
