@@ -1418,27 +1418,38 @@ function Equalizer() {
   );
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, serverTime: number) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const serverOffsetRef = useRef(0);
 
   useEffect(() => {
     serverOffsetRef.current = serverTime - Date.now();
+    setNow(Date.now());
+
     let frameId = 0;
+
     const tick = () => {
       setNow(Date.now());
       frameId = window.requestAnimationFrame(tick);
     };
 
     frameId = window.requestAnimationFrame(tick);
+
     return () => window.cancelAnimationFrame(frameId);
   }, [question.id, serverTime]);
 
   const adjustedNow = now + serverOffsetRef.current;
+  const durationMs = Math.max(1, question.durationMs);
   const remaining = Math.max(0, question.endsAt - adjustedNow);
+  const progress = clamp(remaining / durationMs, 0, 1);
+
   return {
     secondsLeft: Math.ceil(remaining / 1000),
-    progress: remaining / question.durationMs
+    progress
   };
 }
 
