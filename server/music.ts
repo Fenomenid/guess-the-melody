@@ -1,4 +1,4 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { PlaylistSource, Theme, Track, TrackMetadata } from './types';
 
 const YANDEX_API_BASE = 'https://api.music.yandex.net';
@@ -646,7 +646,7 @@ export class MusicService {
         transports: transport,
         sign
       });
-      const result = await this.getRaw<GetFileInfoResult>(`/get-file-info?${params}`);
+      const result = await this.getRaw<GetFileInfoResult>(`/get-file-info?${params}`, this.smartPreviewHeaders());
       const audioUrl = result.downloadInfo?.url ?? result.downloadInfo?.urls?.[0];
       if (audioUrl && stats) {
         stats.smartPreviewAudioUrls += 1;
@@ -676,9 +676,9 @@ export class MusicService {
     return body.result;
   }
 
-  private async getRaw<T>(path: string): Promise<T> {
+  private async getRaw<T>(path: string, headers = this.headers()): Promise<T> {
     const response = await fetch(`${YANDEX_API_BASE}${path}`, {
-      headers: this.headers()
+      headers
     });
 
     if (!response.ok) {
@@ -686,6 +686,21 @@ export class MusicService {
     }
 
     return (await response.json()) as T;
+  }
+
+  private smartPreviewHeaders(): Record<string, string> {
+    return {
+      Accept: '*/*',
+      Origin: 'https://music.yandex.ru',
+      Referer: 'https://music.yandex.ru/',
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
+      'x-request-id': randomUUID(),
+      'x-requested-with': 'XMLHttpRequest',
+      'x-retpath-y': 'https://music.yandex.ru/',
+      'x-yandex-music-client': 'YandexMusicWebNext/1.0.0',
+      'x-yandex-music-without-invocation-info': '1'
+    };
   }
 
   private headers(): Record<string, string> {
