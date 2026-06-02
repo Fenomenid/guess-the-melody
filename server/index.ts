@@ -398,7 +398,8 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
     rounds: typeof raw.rounds === 'number' ? raw.rounds : undefined,
     targetScore: typeof raw.targetScore === 'number' ? raw.targetScore : undefined,
     questionDurationMs: typeof raw.questionDurationMs === 'number' ? raw.questionDurationMs : undefined,
-    allowAnswerChange: typeof raw.allowAnswerChange === 'boolean' ? raw.allowAnswerChange : undefined
+    allowAnswerChange: typeof raw.allowAnswerChange === 'boolean' ? raw.allowAnswerChange : undefined,
+    achievementsEnabled: typeof raw.achievementsEnabled === 'boolean' ? raw.achievementsEnabled : undefined
   };
 }
 

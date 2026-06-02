@@ -86,6 +86,7 @@ export type RoomSettings = {
   targetScore: number;
   questionDurationMs: number;
   allowAnswerChange: boolean;
+  achievementsEnabled: boolean;
 };
 
 export type PublicRoom = {

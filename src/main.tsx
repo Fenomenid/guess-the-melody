@@ -67,6 +67,7 @@ type Room = {
     targetScore: number;
     questionDurationMs: number;
     allowAnswerChange: boolean;
+    achievementsEnabled: boolean;
   };
   players: Player[];
   currentQuestion?: {
@@ -828,7 +829,7 @@ function Lobby({
           </select>
         </label>
         {room.settings.winCondition === 'rounds' && (
-          <label className="field">
+          <label className="field wide-field">
             <span>Раунды</span>
             <input
               type="text"
@@ -874,7 +875,7 @@ function Lobby({
           />
         </label>
         {room.settings.winCondition === 'score' && (
-          <label className="field">
+          <label className="field wide-field">
             <span>Очки для победы</span>
             <input
               type="text"
@@ -902,6 +903,18 @@ function Lobby({
           <span>
             <strong>Можно менять ответ</strong>
             <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
+          </span>
+        </label>
+        <label className="setting-toggle wide-field">
+          <input
+            type="checkbox"
+            disabled={!isHost || isBusy}
+            checked={room.settings.achievementsEnabled}
+            onChange={(event) => onSettingsChange({ achievementsEnabled: event.target.checked })}
+          />
+          <span>
+            <strong>Ачивки (Beta)</strong>
+            <small>Включает экспериментальные события раунда и будущие моменты матча. Пока режим готовится отдельно от основной игры.</small>
           </span>
         </label>
         <div className="notice">

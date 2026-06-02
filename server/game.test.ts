@@ -20,6 +20,7 @@ describe('GameEngine', () => {
     expect(room.settings.themeIds).toEqual([]);
     expect(room.settings.questionDurationMs).toBe(10_000);
     expect(room.settings.targetScore).toBe(10_000);
+    expect(room.settings.achievementsEnabled).toBe(false);
   });
 
   it('starts a round with four answer options and no public correct answer', () => {
@@ -197,6 +198,15 @@ describe('GameEngine', () => {
 
     expect(hardRoom.settings.difficulty).toBe('hard');
     expect(easyRoom.settings.difficulty).toBe('easy');
+  });
+
+  it('can enable beta achievements in room settings', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+
+    const room = engine.updateSettings('ROOM42', { achievementsEnabled: true });
+
+    expect(room.settings.achievementsEnabled).toBe(true);
   });
 
   it('limits easy mode answer time to fifteen seconds', () => {
