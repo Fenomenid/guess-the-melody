@@ -127,6 +127,9 @@ type TrackLoadStats = {
   trailerRequests: number;
   trailerDirectUrls: number;
   trailerTracks: number;
+  smartPreviewRequests: number;
+  smartPreviewAudioUrls: number;
+  smartPreviewFailures: number;
   trailerAudioUrls: number;
   fullTrackFallbacks: number;
   audioFailures: number;
@@ -585,7 +588,9 @@ export class MusicService {
       }
 
       if (stats) stats.trailerTracks += 1;
-      const trailerAudioUrl = await this.trySmartPreviewAudioUrl(trailerTrackId as string | number) ?? await this.tryDownloadInfoAudioUrl(trailerTrackId as string | number);
+      const trailerAudioUrl =
+        (await this.trySmartPreviewAudioUrl(trailerTrackId as string | number, stats)) ??
+        (this.allowFullTrackFallback ? await this.tryDownloadInfoAudioUrl(trailerTrackId as string | number) : undefined);
       if (trailerAudioUrl && stats) stats.trailerAudioUrls += 1;
       return trailerAudioUrl;
     } catch {
@@ -614,17 +619,19 @@ export class MusicService {
     }
   }
 
-  private async trySmartPreviewAudioUrl(trackId: string | number): Promise<string | undefined> {
+  private async trySmartPreviewAudioUrl(trackId: string | number, stats?: TrackLoadStats): Promise<string | undefined> {
+    if (stats) stats.smartPreviewRequests += 1;
     try {
       const normalizedTrackId = String(trackId).split(':')[0];
       const quality = 'smart_preview';
       const transport = 'raw';
       const ts = Math.floor(Date.now() / 1000);
-      const codecs = GET_FILE_INFO_CODECS.join('');
-      const sign = createHmac('sha256', GET_FILE_INFO_SECRET_KEY)
-        .update(`${ts}${normalizedTrackId}${quality}${codecs}${transport}`, 'utf8')
-        .digest('base64')
-        .slice(0, -1);
+      const sign = createGetFileInfoSign({
+        ts,
+        trackId: normalizedTrackId,
+        quality,
+        transport
+      });
       const params = new URLSearchParams({
         ts: String(ts),
         trackId: normalizedTrackId,
@@ -634,8 +641,15 @@ export class MusicService {
         sign
       });
       const result = await this.getRaw<GetFileInfoResult>(`/get-file-info?${params}`);
-      return result.downloadInfo?.url ?? result.downloadInfo?.urls?.[0];
+      const audioUrl = result.downloadInfo?.url ?? result.downloadInfo?.urls?.[0];
+      if (audioUrl && stats) {
+        stats.smartPreviewAudioUrls += 1;
+      } else if (stats) {
+        stats.smartPreviewFailures += 1;
+      }
+      return audioUrl;
     } catch {
+      if (stats) stats.smartPreviewFailures += 1;
       return undefined;
     }
   }
@@ -678,6 +692,24 @@ export class MusicService {
     }
     return headers;
   }
+}
+
+export function createGetFileInfoSign({
+  ts,
+  trackId,
+  quality,
+  transport
+}: {
+  ts: number;
+  trackId: string | number;
+  quality: string;
+  transport: string;
+}): string {
+  const codecs = GET_FILE_INFO_CODECS.join('');
+  return createHmac('sha256', GET_FILE_INFO_SECRET_KEY)
+    .update(`${ts}${trackId}${quality}${codecs}${transport}`, 'utf8')
+    .digest('base64')
+    .replace(/=+$/u, '');
 }
 
 async function fetchText(url: string, headers: Record<string, string>): Promise<string> {
@@ -878,6 +910,9 @@ function createTrackLoadStats(candidates: number, options: number): TrackLoadSta
     trailerRequests: 0,
     trailerDirectUrls: 0,
     trailerTracks: 0,
+    smartPreviewRequests: 0,
+    smartPreviewAudioUrls: 0,
+    smartPreviewFailures: 0,
     trailerAudioUrls: 0,
     fullTrackFallbacks: 0,
     audioFailures: 0
