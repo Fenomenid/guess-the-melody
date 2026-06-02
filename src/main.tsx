@@ -165,6 +165,8 @@ function App() {
   const [selectedOptionId, setSelectedOptionId] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const leftRoomCodesRef = useRef(new Set<string>());
+  const roomRef = useRef<Room | null>(null);
+  const playerNameRef = useRef(playerName);
 
   const me = useMemo(() => room?.players.find((player) => player.id === playerId), [playerId, room]);
   const isHost = Boolean(me?.isHost);
@@ -179,14 +181,52 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    roomRef.current = room;
+  }, [room]);
+
+  useEffect(() => {
+    playerNameRef.current = playerName;
+  }, [playerName]);
+
+  useEffect(() => {
     fetch('/api/themes')
       .then((response) => response.json())
       .then((payload) => setThemes(payload.data ?? []))
       .catch(() => setError('Не удалось загрузить темы'));
 
+    const rejoinCurrentRoom = () => {
+      const currentRoom = roomRef.current;
+      const name = (localStorage.getItem('playerName') ?? playerNameRef.current).trim();
+      if (!currentRoom || !name || leftRoomCodesRef.current.has(currentRoom.code)) {
+        return;
+      }
+
+      socket.emit('join_room', { code: currentRoom.code, playerId, playerName: name }, (response: { data?: Room; error?: string }) => {
+        if (response.error) {
+          setError(`Не удалось восстановить соединение: ${response.error}`);
+          return;
+        }
+        if (response.data) {
+          handleRoomState(response.data);
+          setError('');
+        }
+      });
+    };
+
+    const handleDisconnect = () => {
+      if (!roomRef.current) {
+        return;
+      }
+      setIsBusy(false);
+      setBusyLabel('');
+      setError('Связь с комнатой потеряна. Пробуем переподключиться...');
+    };
+
     socket.on('room_state', handleRoomState);
     socket.on('round_started', setRoom);
     socket.on('round_result', setRoom);
+    socket.on('connect', rejoinCurrentRoom);
+    socket.on('disconnect', handleDisconnect);
     socket.on('kicked', ({ message }: { message: string }) => {
       setRoom(null);
       setError(message);
@@ -197,6 +237,8 @@ function App() {
       socket.off('room_state', handleRoomState);
       socket.off('round_started', setRoom);
       socket.off('round_result', setRoom);
+      socket.off('connect', rejoinCurrentRoom);
+      socket.off('disconnect', handleDisconnect);
       socket.off('kicked');
     };
   }, []);
@@ -256,9 +298,17 @@ function App() {
     setError('');
     setBusyLabel(label);
     setIsBusy(true);
-    socket.emit(event, payload, (response: { data?: T; error?: string }) => {
+    socket.timeout(12_000).emit(event, payload, (timeoutError: Error | null, response?: { data?: T; error?: string }) => {
       setIsBusy(false);
       setBusyLabel('');
+      if (timeoutError) {
+        setError('Сервер не ответил. Проверьте соединение, игра попробует восстановиться автоматически.');
+        return;
+      }
+      if (!response) {
+        setError('Сервер вернул пустой ответ. Попробуйте действие еще раз.');
+        return;
+      }
       if (response.error) {
         if (event === 'submit_answer' && (response.error === 'No active question' || response.error === 'Answer deadline has passed')) {
           return;
