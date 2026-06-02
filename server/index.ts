@@ -29,6 +29,8 @@ const roomOptionTracks = new Map<string, TrackMetadata[]>();
 const roundTimers = new Map<string, NodeJS.Timeout>();
 const nextRoundTimers = new Map<string, NodeJS.Timeout>();
 const roomPoolLoadTokens = new Map<string, number>();
+const socketPlayers = new Map<string, { roomCode: string; playerId: string }>();
+const playerSockets = new Map<string, Set<string>>();
 
 const BACKGROUND_POOL_ROUND_THRESHOLD = 24;
 const INITIAL_PLAYABLE_LIMIT = 16;
@@ -81,6 +83,7 @@ io.on('connection', (socket) => {
       const room = engine.createRoom({ playerId, playerName });
       socket.join(playerId);
       socket.join(room.code);
+      bindSocketPlayer(socket.id, room.code, playerId);
       await persistRooms();
       callback?.({ data: room });
       io.to(room.code).emit('room_state', room);
@@ -94,6 +97,7 @@ io.on('connection', (socket) => {
       const room = engine.joinRoom(code.toUpperCase(), { playerId, playerName });
       socket.join(playerId);
       socket.join(room.code);
+      bindSocketPlayer(socket.id, room.code, playerId);
       await persistRooms();
       callback?.({ data: room });
       io.to(room.code).emit('room_state', room);
@@ -102,8 +106,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('update_settings', async ({ code, settings }: { code: string; settings: unknown }, callback) => {
+  socket.on('update_settings', async ({ code, playerId, settings }: { code: string; playerId: string; settings: unknown }, callback) => {
     try {
+      requireSocketPlayer(socket.id, code, playerId);
+      engine.assertHost(code, playerId);
       const room = engine.updateSettings(code, parseSettings(settings));
       await persistRooms();
       callback?.({ data: room });
@@ -113,8 +119,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('start_game', async ({ code }: { code: string }, callback) => {
+  socket.on('start_game', async ({ code, playerId }: { code: string; playerId: string }, callback) => {
     try {
+      requireSocketPlayer(socket.id, code, playerId);
+      engine.assertHost(code, playerId);
       const preparingRoom = engine.markPreparing(code);
       await persistRooms();
       io.to(preparingRoom.code).emit('room_state', preparingRoom);
@@ -150,6 +158,7 @@ io.on('connection', (socket) => {
 
   socket.on('submit_answer', async ({ code, playerId, optionId }: { code: string; playerId: string; optionId: string }, callback) => {
     try {
+      requireSocketPlayer(socket.id, code, playerId);
       const result = engine.submitAnswer(code, playerId, optionId);
       const room = engine.getPublicRoom(code);
       await persistRooms();
@@ -163,6 +172,7 @@ io.on('connection', (socket) => {
 
   socket.on('kick_player', async ({ code, hostPlayerId, targetPlayerId }: { code: string; hostPlayerId: string; targetPlayerId: string }, callback) => {
     try {
+      requireSocketPlayer(socket.id, code, hostPlayerId);
       const room = engine.kickPlayer(code, hostPlayerId, targetPlayerId);
       await persistRooms();
       callback?.({ data: room });
@@ -175,10 +185,12 @@ io.on('connection', (socket) => {
 
   socket.on('leave_room', async ({ code, playerId }: { code: string; playerId: string }, callback) => {
     try {
+      requireSocketPlayer(socket.id, code, playerId);
       const result = engine.leaveRoom(code, playerId);
       socket.leave(code.toUpperCase());
+      unbindSocketPlayer(socket.id);
       await persistRooms();
-      callback?.({ data: result.room ?? null });
+      callback?.({ data: null });
       if (result.room) {
         io.to(result.room.code).emit('room_state', result.room);
       } else if (result.deletedRoomCode) {
@@ -193,8 +205,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('next_round', async ({ code }: { code: string }, callback) => {
+  socket.on('next_round', async ({ code, playerId }: { code: string; playerId: string }, callback) => {
     try {
+      requireSocketPlayer(socket.id, code, playerId);
+      engine.assertHost(code, playerId);
       await startRound(code);
       callback?.({ data: engine.getPublicRoom(code) });
     } catch (error) {
@@ -202,8 +216,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('reset_game', async ({ code }: { code: string }, callback) => {
+  socket.on('reset_game', async ({ code, playerId }: { code: string; playerId: string }, callback) => {
     try {
+      requireSocketPlayer(socket.id, code, playerId);
+      engine.assertHost(code, playerId);
       clearRoundTimer(code);
       clearNextRoundTimer(code);
       const room = engine.resetToLobby(code);
@@ -216,6 +232,24 @@ io.on('connection', (socket) => {
     } catch (error) {
       callback?.({ error: toClientError(error) });
     }
+  });
+
+  socket.on('disconnect', async () => {
+    const binding = socketPlayers.get(socket.id);
+    if (!binding) {
+      return;
+    }
+    const hasOtherSockets = unbindSocketPlayer(socket.id);
+    if (hasOtherSockets) {
+      return;
+    }
+
+    const room = engine.disconnectPlayer(binding.roomCode, binding.playerId);
+    if (!room) {
+      return;
+    }
+    await persistRooms();
+    io.to(room.code).emit('room_state', room);
   });
 });
 
@@ -354,6 +388,43 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
     questionDurationMs: typeof raw.questionDurationMs === 'number' ? raw.questionDurationMs : undefined,
     allowAnswerChange: typeof raw.allowAnswerChange === 'boolean' ? raw.allowAnswerChange : undefined
   };
+}
+
+function requireSocketPlayer(socketId: string, code: string, playerId: string): void {
+  const binding = socketPlayers.get(socketId);
+  if (!binding || binding.roomCode !== code.toUpperCase() || binding.playerId !== playerId) {
+    throw new Error('Socket is not bound to this player');
+  }
+}
+
+function bindSocketPlayer(socketId: string, roomCode: string, playerId: string): void {
+  unbindSocketPlayer(socketId);
+  const normalizedRoomCode = roomCode.toUpperCase();
+  socketPlayers.set(socketId, { roomCode: normalizedRoomCode, playerId });
+  const key = playerSocketKey(normalizedRoomCode, playerId);
+  const sockets = playerSockets.get(key) ?? new Set<string>();
+  sockets.add(socketId);
+  playerSockets.set(key, sockets);
+}
+
+function unbindSocketPlayer(socketId: string): boolean {
+  const binding = socketPlayers.get(socketId);
+  if (!binding) {
+    return false;
+  }
+  socketPlayers.delete(socketId);
+  const key = playerSocketKey(binding.roomCode, binding.playerId);
+  const sockets = playerSockets.get(key);
+  sockets?.delete(socketId);
+  if (sockets && sockets.size > 0) {
+    return true;
+  }
+  playerSockets.delete(key);
+  return false;
+}
+
+function playerSocketKey(roomCode: string, playerId: string): string {
+  return `${roomCode.toUpperCase()}:${playerId}`;
 }
 
 function clampProbeLimit(value: number): number {

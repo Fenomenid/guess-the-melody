@@ -3,6 +3,7 @@ import type {
   Player,
   PlayerAnswerResult,
   PlaylistSource,
+  PublicPlayer,
   PublicRoom,
   QuestionInternal,
   RoomSettings,
@@ -132,6 +133,14 @@ export class GameEngine {
     return toPublicRoom(room);
   }
 
+  assertHost(code: string, playerId: string): void {
+    const room = this.requireRoom(code);
+    const player = room.players.get(playerId);
+    if (!player?.isHost) {
+      throw new Error('Only host can perform this action');
+    }
+  }
+
   markPreparing(code: string): PublicRoom {
     const room = this.requireRoom(code);
     if (room.status !== 'lobby' && room.status !== 'round-result') {
@@ -217,6 +226,9 @@ export class GameEngine {
     if (!room.currentQuestion || room.status !== 'question') {
       throw new Error('No active question');
     }
+    if (now > room.currentQuestion.endsAt) {
+      throw new Error('Answer deadline has passed');
+    }
     if (player.lastAnswer && !room.settings.allowAnswerChange) {
       throw new Error('Player already answered');
     }
@@ -289,6 +301,27 @@ export class GameEngine {
 
   getPublicRoom(code: string): PublicRoom {
     return toPublicRoom(this.requireRoom(code));
+  }
+
+  disconnectPlayer(code: string, playerId: string): PublicRoom | undefined {
+    const room = this.rooms.get(code.toUpperCase());
+    if (!room) {
+      return undefined;
+    }
+    const player = room.players.get(playerId);
+    if (!player) {
+      return toPublicRoom(room, room.status === 'round-result' || room.status === 'finished');
+    }
+
+    player.connected = false;
+    if (player.isHost) {
+      const nextHost = [...room.players.values()].find((candidate) => candidate.id !== playerId && candidate.connected);
+      if (nextHost) {
+        player.isHost = false;
+        nextHost.isHost = true;
+      }
+    }
+    return toPublicRoom(room, room.status === 'round-result' || room.status === 'finished');
   }
 
   exportRooms(): SerializedRoom[] {
@@ -381,27 +414,26 @@ function toPublicRoom(room: Room, revealCorrectTrack = false): PublicRoom {
   };
 }
 
-function toPublicPlayer(player: Player, revealAnswer: boolean): Player {
+function toPublicPlayer(player: Player, revealAnswer: boolean): PublicPlayer {
   if (revealAnswer || !player.lastAnswer) {
     return { ...player };
   }
 
   return {
     ...player,
-    lastAnswer: {
-      optionId: player.lastAnswer.optionId,
-      isCorrect: false,
-      responseMs: 0,
-      points: 0
-    }
+    lastAnswer: { hasAnswered: true }
   };
 }
 
-function sortPublicPlayers(players: Player[], revealRound: boolean): Player[] {
+function sortPublicPlayers(players: PublicPlayer[], revealRound: boolean): PublicPlayer[] {
   if (revealRound) {
-    return players.sort((a, b) => (b.lastAnswer?.points ?? 0) - (a.lastAnswer?.points ?? 0) || b.score - a.score);
+    return players.sort((a, b) => publicAnswerPoints(b) - publicAnswerPoints(a) || b.score - a.score);
   }
   return players.sort((a, b) => b.score - a.score);
+}
+
+function publicAnswerPoints(player: PublicPlayer): number {
+  return player.lastAnswer && 'points' in player.lastAnswer ? player.lastAnswer.points : 0;
 }
 
 function isGameFinished(room: Room): boolean {

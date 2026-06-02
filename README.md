@@ -50,13 +50,21 @@ https://<your-render-service>/api/music/diagnostics
 Useful fields:
 
 - `forceDemo: false` means demo mode is disabled.
-- `tokenConfigured: false` means no Yandex token is configured. This is expected when testing public access.
+- `tokenConfigured` shows whether a Yandex Music token is configured.
 - `allowFullTrackFallback: false` means full tracks are not used as a fallback.
+- `lastLoadStats.difficulty` shows whether the last loaded pool used `easy` trailers or `hard` full-track starts.
+- `lastLoadStats.smartPreviewAudioUrls` shows how many playable trailer URLs were found in easy mode.
 - `lastFallbackReason` explains why the server switched to demo fallback after a track-loading attempt.
 
 If `lastFallbackReason` is empty, create a room, start a game, then refresh diagnostics. The reason is recorded only after the server tries to load tracks.
 
-If Render returns `Yandex Music request failed: 451`, Yandex is refusing the request from Render's server environment, usually because of region/IP restrictions. Local runs can still work because they use your own network and location.
+You can also check trailer availability directly:
+
+```text
+https://<your-render-service>/api/music/probe?difficulty=easy&limit=5
+```
+
+For easy mode, successful rows should have `hasAudio: true` and `isSmartPreview: true`.
 
 ## Render Environment
 
@@ -67,7 +75,7 @@ YANDEX_MUSIC_USE_DEMO=false
 YANDEX_MUSIC_ALLOW_FULL_TRACK_FALLBACK=false
 ```
 
-Optional, if public trailer audio is not available from the deployed server:
+Optional, for API requests that require account access:
 
 ```text
 YANDEX_MUSIC_TOKEN=...

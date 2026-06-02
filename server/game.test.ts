@@ -101,6 +101,20 @@ describe('GameEngine', () => {
     expect(engine.revealRound('ROOM42').players[0].score).toBeGreaterThan(0);
   });
 
+  it('hides selected option details until the round is revealed', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+
+    engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 2000);
+
+    const hiddenAnswer = engine.getPublicRoom('ROOM42').players[0].lastAnswer;
+    const revealedAnswer = engine.revealRound('ROOM42').players[0].lastAnswer;
+
+    expect(hiddenAnswer).toEqual({ hasAnswered: true });
+    expect(revealedAnswer).toMatchObject({ optionId: question.correctOptionId, isCorrect: true });
+  });
+
   it('publishes server time and round end time for synchronized countdowns', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
@@ -159,6 +173,15 @@ describe('GameEngine', () => {
 
     expect(hardRoom.settings.difficulty).toBe('hard');
     expect(easyRoom.settings.difficulty).toBe('easy');
+  });
+
+  it('rejects host-only actions from regular players', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.joinRoom('ROOM42', { playerId: 'guest', playerName: 'Guest' });
+
+    expect(() => engine.assertHost('ROOM42', 'guest')).toThrow('Only host can perform this action');
+    expect(() => engine.assertHost('ROOM42', 'host')).not.toThrow();
   });
 
   it('keeps the default empty theme selection when unrelated settings change', () => {
@@ -342,6 +365,16 @@ describe('GameEngine', () => {
     );
   });
 
+  it('rejects answers submitted after the round deadline', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+
+    expect(() => engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 11_001)).toThrow(
+      'Answer deadline has passed'
+    );
+  });
+
   it('allows changing an answer before reveal when enabled', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
@@ -355,7 +388,7 @@ describe('GameEngine', () => {
 
     expect(first.isCorrect).toBe(false);
     expect(second.isCorrect).toBe(true);
-    expect(revealed.players[0].lastAnswer?.optionId).toBe(question.correctOptionId);
+    expect(revealed.players[0].lastAnswer).toMatchObject({ optionId: question.correctOptionId });
     expect(revealed.players[0].score).toBe(second.points);
   });
 });

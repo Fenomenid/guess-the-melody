@@ -59,6 +59,8 @@ export type PlayerAnswerResult = {
   points: number;
 };
 
+export type PublicPlayerAnswer = PlayerAnswerResult | { hasAnswered: true };
+
 export type PlaylistSource = {
   url: string;
   name: string;
@@ -82,9 +84,13 @@ export type PublicRoom = {
   code: string;
   status: RoomStatus;
   settings: RoomSettings;
-  players: Player[];
+  players: PublicPlayer[];
   currentQuestion?: Question;
   correctTrack?: Track;
   round: number;
   serverTime: number;
+};
+
+export type PublicPlayer = Omit<Player, 'lastAnswer'> & {
+  lastAnswer?: PublicPlayerAnswer;
 };

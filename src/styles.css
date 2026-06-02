@@ -9,8 +9,8 @@
 }
 
 :root[data-theme="dark"] {
-  color: #e7edf6;
-  background: #101722;
+  color: #f4f8ff;
+  background: #000000;
   color-scheme: dark;
 }
 
@@ -27,6 +27,13 @@ body {
     radial-gradient(circle at 12% 8%, rgba(71, 127, 117, 0.16), transparent 34%),
     radial-gradient(circle at 82% 14%, rgba(184, 137, 49, 0.14), transparent 31%),
     inherit;
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 14% 6%, rgba(47, 211, 181, 0.12), transparent 30%),
+    radial-gradient(circle at 84% 12%, rgba(244, 181, 63, 0.1), transparent 28%),
+    #000000;
 }
 
 button,
@@ -296,6 +303,26 @@ h2 {
 .question-stage {
   align-items: stretch;
   justify-content: flex-start;
+}
+
+.track-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border: 1px solid #c3b6a3;
+  border-radius: 8px;
+  background: #ded4c4;
+  box-shadow: 0 12px 28px rgba(58, 48, 34, 0.12);
+}
+
+.active-cover {
+  max-width: 190px;
+  justify-self: center;
+}
+
+.result-cover {
+  width: 58px;
+  min-width: 58px;
 }
 
 .field {
@@ -1042,18 +1069,20 @@ select:focus {
 :root[data-theme="dark"] .auth-panel,
 :root[data-theme="dark"] .game-panel,
 :root[data-theme="dark"] .sidebar {
-  background: #151f2d;
-  border-color: #2a3a50;
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+  background: #05070a;
+  border-color: #1c2633;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 :root[data-theme="dark"] .settings-section {
-  background: #111a27;
-  border-color: #2a3a50;
+  background: #030507;
+  border-color: #1c2633;
 }
 
 :root[data-theme="dark"] .settings-section .settings-grid {
-  border-color: #2a3a50;
+  border-color: #1c2633;
 }
 
 :root[data-theme="dark"] .eyebrow,
@@ -1079,14 +1108,14 @@ select:focus {
 :root[data-theme="dark"] .loading-strip,
 :root[data-theme="dark"] .solution {
   color: #e7edf6;
-  background: #111a27;
-  border-color: #2a3a50;
+  background: #070b10;
+  border-color: #1c2633;
 }
 
 :root[data-theme="dark"] .player-row.self {
-  background: #182435;
-  border-color: #43546b;
-  box-shadow: 0 12px 28px rgba(22, 35, 51, 0.22);
+  background: #0b1118;
+  border-color: #2d3a4c;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
 }
 
 :root[data-theme="dark"] .player-row.self::before {
@@ -1109,8 +1138,8 @@ select:focus {
 :root[data-theme="dark"] input,
 :root[data-theme="dark"] select {
   color: #e7edf6;
-  background: #101722;
-  border-color: #31435b;
+  background: #020407;
+  border-color: #243244;
 }
 
 :root[data-theme="dark"] .field {
@@ -1119,19 +1148,19 @@ select:focus {
 
 :root[data-theme="dark"] .secondary {
   color: #dbe7f6;
-  background: #203044;
-  border-color: #334860;
+  background: #0b1118;
+  border-color: #263447;
 }
 
 :root[data-theme="dark"] .difficulty-toggle button {
   color: #dbe7f6;
-  background: #203044;
-  border-color: #334860;
+  background: #0b1118;
+  border-color: #263447;
 }
 
 :root[data-theme="dark"] .difficulty-toggle button.active {
   border-color: #5fc4ef;
-  background: #173148;
+  background: #061d2b;
   box-shadow: 0 0 0 3px rgba(95, 196, 239, 0.14);
 }
 
@@ -1141,13 +1170,13 @@ select:focus {
 
 :root[data-theme="dark"] .theme-choice {
   color: #dbe7f6;
-  background: #203044;
-  border-color: #334860;
+  background: #0b1118;
+  border-color: #263447;
 }
 
 :root[data-theme="dark"] .playlist-item {
-  background: #203044;
-  border-color: #334860;
+  background: #0b1118;
+  border-color: #263447;
 }
 
 :root[data-theme="dark"] .playlist-item span {
@@ -1158,9 +1187,15 @@ select:focus {
   color: #9eb0c7;
 }
 
+:root[data-theme="dark"] .track-cover {
+  background: #0b1118;
+  border-color: #263447;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.55);
+}
+
 :root[data-theme="dark"] .setting-toggle {
-  background: #203044;
-  border-color: #334860;
+  background: #0b1118;
+  border-color: #263447;
 }
 
 :root[data-theme="dark"] .setting-toggle small {
@@ -1178,8 +1213,8 @@ select:focus {
 
 :root[data-theme="dark"] .notice {
   color: #d8eef8;
-  background: #173447;
-  border-color: #2d607d;
+  background: #06121a;
+  border-color: #21475e;
 }
 
 :root[data-theme="dark"] .notice.winner {
@@ -1213,21 +1248,21 @@ select:focus {
 :root[data-theme="dark"] .music-visual {
   background:
     radial-gradient(circle at 18px 24px, rgba(95, 196, 239, 0.18), transparent 32px),
-    linear-gradient(135deg, #173447, #111a27 64%);
-  border-color: #2d607d;
+    linear-gradient(135deg, #06121a, #020407 64%);
+  border-color: #21475e;
 }
 
 :root[data-theme="dark"] .countdown-ring {
   color: #dff4ff;
   background:
-    radial-gradient(circle, #111a27 0 59%, transparent 60%),
-    conic-gradient(#2f8eb7 var(--progress), #31435b 0);
+    radial-gradient(circle, #030507 0 59%, transparent 60%),
+    conic-gradient(#2f8eb7 var(--progress), #1c2633 0);
 }
 
 :root[data-theme="dark"] .source-pill {
   color: #dff4ff;
-  background: rgba(17, 26, 39, 0.84);
-  border-color: #2d607d;
+  background: rgba(3, 5, 7, 0.84);
+  border-color: #21475e;
 }
 
 :root[data-theme="dark"] .selected-answer {

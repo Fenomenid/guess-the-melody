@@ -38,12 +38,7 @@ type Player = {
   score: number;
   connected: boolean;
   isHost: boolean;
-  lastAnswer?: {
-    optionId: string;
-    isCorrect: boolean;
-    responseMs: number;
-    points: number;
-  };
+  lastAnswer?: { hasAnswered: true } | { optionId: string; isCorrect: boolean; responseMs: number; points: number };
 };
 
 type PlaylistSource = {
@@ -99,6 +94,10 @@ type ConfirmDialogState = {
   onConfirm: () => void;
 };
 
+function hasRevealedAnswer(player: Player): player is Player & { lastAnswer: { optionId: string; isCorrect: boolean; responseMs: number; points: number } } {
+  return Boolean(player.lastAnswer && 'optionId' in player.lastAnswer);
+}
+
 const socket = io();
 
 function getOrCreatePlayerId(): string {
@@ -133,6 +132,7 @@ function App() {
   const [volumeOpen, setVolumeOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'));
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [selectedOptionId, setSelectedOptionId] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const me = useMemo(() => room?.players.find((player) => player.id === playerId), [playerId, room]);
@@ -182,6 +182,10 @@ function App() {
       audioRef.current.volume = volume;
     }
   }, [volume]);
+
+  useEffect(() => {
+    setSelectedOptionId('');
+  }, [room?.currentQuestion?.id]);
 
   useEffect(() => {
     if (!room?.code) {
@@ -244,11 +248,12 @@ function App() {
 
   function updateSettings(settings: Partial<Room['settings']>) {
     if (!room) return;
-    emit<Room>('update_settings', { code: room.code, settings }, setRoom, 'Обновляем настройки');
+    emit<Room>('update_settings', { code: room.code, playerId, settings }, setRoom, 'Обновляем настройки');
   }
 
   function submitAnswer(optionId: string) {
     if (!room || (me?.lastAnswer && !room.settings.allowAnswerChange)) return;
+    setSelectedOptionId(optionId);
     emit('submit_answer', { code: room.code, playerId, optionId }, undefined, 'Фиксируем ответ');
   }
 
@@ -274,6 +279,11 @@ function App() {
     );
   }
 
+  function resetGame() {
+    if (!room) return;
+    emit('reset_game', { code: room.code, playerId }, undefined, 'Возвращаем в лобби');
+  }
+
   function requestKickPlayer(player: Player) {
     setConfirmDialog({
       title: 'Кикнуть игрока?',
@@ -291,6 +301,16 @@ function App() {
       confirmLabel: 'Покинуть',
       tone: 'danger',
       onConfirm: leaveRoom
+    });
+  }
+
+  function requestResetGame() {
+    setConfirmDialog({
+      title: 'Вернуться в лобби?',
+      message: 'Текущая игра завершится, счет и раунд будут сброшены. Игроки останутся в комнате.',
+      confirmLabel: 'В лобби',
+      tone: 'primary',
+      onConfirm: resetGame
     });
   }
 
@@ -392,7 +412,7 @@ function App() {
             Покинуть
           </button>
           {isHost && room.status !== 'lobby' && (
-            <button className="secondary icon-text" onClick={() => emit('reset_game', { code: room.code }, undefined, 'Возвращаем в лобби')}>
+            <button className="secondary icon-text" onClick={requestResetGame}>
               <RotateCcw size={18} />
               В лобби
             </button>
@@ -445,7 +465,7 @@ function App() {
               isHost={isHost}
               isBusy={isBusy}
               busyLabel={busyLabel}
-              onStart={() => emit('start_game', { code: room.code }, undefined, 'Готовим треки Яндекс Музыки')}
+              onStart={() => emit('start_game', { code: room.code, playerId }, undefined, 'Готовим треки Яндекс Музыки')}
               onSettingsChange={updateSettings}
             />
           )}
@@ -456,6 +476,7 @@ function App() {
             <QuestionStage
               room={room}
               me={me}
+              selectedOptionId={selectedOptionId}
               volume={volume}
               audioRef={audioRef}
               onSubmit={submitAnswer}
@@ -463,7 +484,7 @@ function App() {
           )}
 
           {(room.status === 'round-result' || room.status === 'finished') && (
-            <ResultStage room={room} isHost={isHost} emit={emit} />
+            <ResultStage room={room} isHost={isHost} playerId={playerId} emit={emit} />
           )}
         </section>
       </div>
@@ -809,12 +830,14 @@ function PreparingStage() {
 function QuestionStage({
   room,
   me,
+  selectedOptionId,
   volume,
   audioRef,
   onSubmit
 }: {
   room: Room;
   me?: Player;
+  selectedOptionId: string;
   volume: number;
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
   onSubmit: (optionId: string) => void;
@@ -859,6 +882,9 @@ function QuestionStage({
       </div>
 
       <div className="music-visual">
+        {question.coverUrl && (
+          <img className="track-cover active-cover" src={question.coverUrl} alt="" />
+        )}
         <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
           <Timer size={26} />
           <strong>{countdown.secondsLeft}</strong>
@@ -889,7 +915,7 @@ function QuestionStage({
           <button
             className={[
               'answer-button',
-              me?.lastAnswer?.optionId === option.id ? 'selected-answer' : '',
+              selectedOptionId === option.id ? 'selected-answer' : '',
               me?.lastAnswer && !room.settings.allowAnswerChange ? 'locked-answer' : ''
             ]
               .filter(Boolean)
@@ -899,7 +925,7 @@ function QuestionStage({
             disabled={Boolean(me?.lastAnswer && !room.settings.allowAnswerChange)}
           >
             {option.title}
-            {me?.lastAnswer?.optionId === option.id && <span className="answer-picked">Ваш ответ</span>}
+            {selectedOptionId === option.id && <span className="answer-picked">Ваш ответ</span>}
           </button>
         ))}
       </div>
@@ -907,16 +933,26 @@ function QuestionStage({
   );
 }
 
-function ResultStage({ room, emit }: { room: Room; isHost: boolean; emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void }) {
+function ResultStage({
+  room,
+  isHost,
+  playerId,
+  emit
+}: {
+  room: Room;
+  isHost: boolean;
+  playerId: string;
+  emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void;
+}) {
   const nextRoundCountdown = useAutoNextCountdown(room.status, room.round);
 
   function selectedOptionTitle(player: Player): string {
-    const optionId = player.lastAnswer?.optionId;
+    const optionId = hasRevealedAnswer(player) ? player.lastAnswer.optionId : undefined;
     return room.currentQuestion?.options.find((option) => option.id === optionId)?.title ?? 'Не ответил';
   }
 
   if (room.status === 'finished') {
-    return <FinalStage room={room} emit={emit} selectedOptionTitle={selectedOptionTitle} />;
+    return <FinalStage room={room} isHost={isHost} playerId={playerId} emit={emit} selectedOptionTitle={selectedOptionTitle} />;
   }
 
   return (
@@ -925,7 +961,7 @@ function ResultStage({ room, emit }: { room: Room; isHost: boolean; emit: <T>(ev
       <h2>Раунд завершен</h2>
       {room.correctTrack && (
         <div className="solution">
-          <Music2 size={24} />
+          {room.correctTrack.coverUrl ? <img className="track-cover result-cover" src={room.correctTrack.coverUrl} alt="" /> : <Music2 size={24} />}
           <div>
             <strong>{room.correctTrack.title}</strong>
             <span>{room.correctTrack.artist}</span>
@@ -939,19 +975,21 @@ function ResultStage({ room, emit }: { room: Room; isHost: boolean; emit: <T>(ev
             <span>{index === 0 ? <Crown size={18} /> : index + 1}</span>
             <strong>
               {player.name}
-              <small className={player.lastAnswer?.isCorrect ? 'answer-summary correct' : 'answer-summary'}>
+              <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>
                 {selectedOptionTitle(player)}
               </small>
             </strong>
-            {player.lastAnswer?.points ? <b className="score-pop">+{player.lastAnswer.points}</b> : <small>0</small>}
+            {hasRevealedAnswer(player) && player.lastAnswer.points ? <b className="score-pop">+{player.lastAnswer.points}</b> : <small>0</small>}
           </div>
         ))}
       </div>
       <div className="actions">
-        <button className="primary" onClick={() => emit('next_round', { code: room.code }, undefined, 'Готовим следующий трек')}>
-          <Play size={18} />
-          Следующий раунд
-        </button>
+        {isHost && (
+          <button className="primary" onClick={() => emit('next_round', { code: room.code, playerId }, undefined, 'Готовим следующий трек')}>
+            <Play size={18} />
+            Следующий раунд
+          </button>
+        )}
         {nextRoundCountdown > 0 && (
           <div className="notice auto-next">
             <Timer size={18} />
@@ -965,10 +1003,14 @@ function ResultStage({ room, emit }: { room: Room; isHost: boolean; emit: <T>(ev
 
 function FinalStage({
   room,
+  isHost,
+  playerId,
   emit,
   selectedOptionTitle
 }: {
   room: Room;
+  isHost: boolean;
+  playerId: string;
   emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void;
   selectedOptionTitle: (player: Player) => string;
 }) {
@@ -1005,18 +1047,20 @@ function FinalStage({
             <span>{index === 0 ? <Crown size={18} /> : index + 1}</span>
             <strong>
               {player.name}
-              <small className={player.lastAnswer?.isCorrect ? 'answer-summary correct' : 'answer-summary'}>{selectedOptionTitle(player)}</small>
+              <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>{selectedOptionTitle(player)}</small>
             </strong>
-            <small>{player.lastAnswer?.points ? `+${player.lastAnswer.points}` : '0'}</small>
+            <small>{hasRevealedAnswer(player) && player.lastAnswer.points ? `+${player.lastAnswer.points}` : '0'}</small>
             <em>{player.score}</em>
           </div>
         ))}
       </div>
       <div className="actions">
-        <button className="primary" onClick={() => emit('reset_game', { code: room.code }, undefined, 'Возвращаем в лобби')}>
-          <RotateCcw size={18} />
-          Новая игра
-        </button>
+        {isHost && (
+          <button className="primary" onClick={() => emit('reset_game', { code: room.code, playerId }, undefined, 'Возвращаем в лобби')}>
+            <RotateCcw size={18} />
+            Новая игра
+          </button>
+        )}
       </div>
     </div>
   );
