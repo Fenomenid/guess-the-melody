@@ -813,6 +813,18 @@ function Lobby({
             </button>
           </div>
         </label>
+        <label className={['setting-toggle wide-field', room.settings.allowAnswerChange ? 'active' : ''].filter(Boolean).join(' ')}>
+          <input
+            type="checkbox"
+            disabled={!isHost || isBusy}
+            checked={room.settings.allowAnswerChange}
+            onChange={(event) => onSettingsChange({ allowAnswerChange: event.target.checked })}
+          />
+          <span>
+            <strong>Можно менять ответ</strong>
+            <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
+          </span>
+        </label>
         <label className="field wide-field">
           <span>Плейлисты</span>
           <div className="playlist-input-grid">
@@ -1008,18 +1020,6 @@ function Lobby({
             />
           </label>
         )}
-        <label className={['setting-toggle wide-field', room.settings.allowAnswerChange ? 'active' : ''].filter(Boolean).join(' ')}>
-          <input
-            type="checkbox"
-            disabled={!isHost || isBusy}
-            checked={room.settings.allowAnswerChange}
-            onChange={(event) => onSettingsChange({ allowAnswerChange: event.target.checked })}
-          />
-          <span>
-            <strong>Можно менять ответ</strong>
-            <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
-          </span>
-        </label>
         <div className="notice">
           <Radio size={18} />
           <span>
