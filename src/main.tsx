@@ -1078,10 +1078,7 @@ function QuestionStage({
         </span>
         <span>{me?.lastAnswer ? 'Ответ принят' : 'Выберите название трека'}</span>
       </div>
-
-      <AchievementShelf achievements={room.achievements} title="События" compact />
-
-      <div className="music-visual">
+<div className="music-visual">
         <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
           <Timer size={26} />
           <strong>{countdown.secondsLeft}</strong>
@@ -1126,6 +1123,9 @@ function QuestionStage({
           </button>
         ))}
       </div>
+
+<AchievementShelf achievements={room.achievements} title="События" compact />
+
     </div>
   );
 }
