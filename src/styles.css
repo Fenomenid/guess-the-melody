@@ -403,8 +403,8 @@ h2 {
 }
 
 .result-cover {
-  width: 58px;
-  min-width: 58px;
+  width: clamp(88px, 12vw, 124px);
+  min-width: clamp(88px, 12vw, 124px);
 }
 
 .field {
@@ -994,7 +994,7 @@ select:focus {
   width: min(680px, 100%);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 18px;
   padding: 18px 20px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1648,6 +1648,16 @@ select:focus {
 
   .countdown-ring {
     width: min(208px, 72vw);
+  }
+
+  .solution {
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .result-cover {
+    width: clamp(74px, 24vw, 96px);
+    min-width: clamp(74px, 24vw, 96px);
   }
 
   .join-row {
