@@ -30,7 +30,7 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #0b0f17;
+  --bg: #000000;
   --surface: #121823;
   --surface-2: #172030;
   --surface-3: #1d293a;
@@ -1181,7 +1181,7 @@ select:focus {
   overflow: hidden;
 }
 
-.final-stage > *:not(.fireworks) {
+.final-stage>*:not(.fireworks) {
   position: relative;
   z-index: 1;
 }
@@ -1517,6 +1517,7 @@ select:focus {
 }
 
 @keyframes equalizer {
+
   0%,
   100% {
     height: 24%;
