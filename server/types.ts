@@ -69,6 +69,7 @@ export type Achievement = {
   icon: string;
   title: string;
   description: string;
+  recipient?: string;
   tone: 'safe' | 'good' | 'bad' | 'chaos';
 };
 

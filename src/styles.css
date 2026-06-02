@@ -63,6 +63,50 @@ h1 {
   line-height: 0.98;
 }
 
+.app-title {
+  position: relative;
+  width: fit-content;
+  padding-bottom: 10px;
+  color: #102b32;
+  font-size: clamp(38px, 5.8vw, 64px);
+  font-weight: 950;
+  line-height: 0.92;
+  letter-spacing: 0;
+  text-wrap: balance;
+  background: linear-gradient(92deg, #17343b 0%, #347f75 42%, #a56a20 78%, #2b2220 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 10px 18px rgba(71, 127, 117, 0.16));
+}
+
+.app-title::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 12%;
+  bottom: 0;
+  height: 5px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, #4f8765, #d4a338 58%, transparent 58%),
+    repeating-linear-gradient(90deg, transparent 0 14px, rgba(212, 163, 56, 0.8) 14px 18px);
+  box-shadow: 0 8px 18px rgba(79, 135, 101, 0.2);
+}
+
+.app-title::before {
+  content: "♪";
+  position: absolute;
+  right: -28px;
+  top: -12px;
+  color: #d4a338;
+  font-size: 28px;
+  line-height: 1;
+  -webkit-text-fill-color: #d4a338;
+  text-shadow: 0 8px 18px rgba(212, 163, 56, 0.26);
+  transform: rotate(8deg);
+}
+
 h2 {
   font-size: clamp(28px, 4vw, 48px);
   line-height: 1.04;
@@ -945,7 +989,7 @@ select:focus {
 
 .achievement-shelf.compact .achievement-card {
   width: auto;
-  min-height: 40px;
+  min-height: 48px;
   grid-template-columns: 30px auto;
   gap: 8px;
   padding: 6px 10px 6px 7px;
@@ -958,6 +1002,14 @@ select:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  line-height: 1.05;
+}
+
+.achievement-shelf.compact .achievement-card small {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .achievement-card {
@@ -1059,6 +1111,12 @@ select:focus {
   color: #706754;
   font-weight: 800;
   line-height: 1.35;
+}
+
+.achievement-recipient {
+  color: #4b8fbd;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .match-moments {
@@ -1353,6 +1411,21 @@ select:focus {
 :root[data-theme="dark"] .score-row small,
 :root[data-theme="dark"] .round-header {
   color: #9eb0c7;
+}
+
+:root[data-theme="dark"] .app-title {
+  background: linear-gradient(92deg, #ffffff 0%, #9df0c0 42%, #ffd66e 76%, #dfe8ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 12px 22px rgba(125, 216, 166, 0.18));
+}
+
+:root[data-theme="dark"] .app-title::after {
+  background:
+    linear-gradient(90deg, #7dd8a6, #e4b953 58%, transparent 58%),
+    repeating-linear-gradient(90deg, transparent 0 14px, rgba(228, 185, 83, 0.75) 14px 18px);
+  box-shadow: 0 8px 18px rgba(125, 216, 166, 0.18);
 }
 
 :root[data-theme="dark"] .self-label strong,

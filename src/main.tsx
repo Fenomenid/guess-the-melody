@@ -54,6 +54,7 @@ type Achievement = {
   icon: string;
   title: string;
   description: string;
+  recipient?: string;
   tone: 'safe' | 'good' | 'bad' | 'chaos';
 };
 
@@ -403,7 +404,7 @@ function App() {
             <Music2 size={34} />
             <div>
               <p className="eyebrow">Yandex Music party</p>
-              <h1>Угадай мелодию</h1>
+              <h1 className="app-title">Угадай мелодию</h1>
               <p className="muted">Создайте комнату, отправьте ссылку друзьям и угадывайте треки по коротким превью.</p>
             </div>
           </div>
@@ -450,7 +451,7 @@ function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">Комната {room.code}</p>
-          <h1>Угадай мелодию</h1>
+          <h1 className="app-title">Угадай мелодию</h1>
           {me && (
             <p className="self-label">
               Вы: <strong>{me.name}</strong>
@@ -1290,6 +1291,7 @@ function AchievementShelf({ achievements, title = 'Ачивки', compact = fals
             <AchievementIcon achievement={achievement} />
             <div>
               <strong>{achievement.title}</strong>
+              {compact && achievement.recipient && <small className="achievement-recipient">{achievement.recipient}</small>}
               {!compact && <small>{achievement.description}</small>}
             </div>
           </article>

@@ -514,6 +514,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
       icon: '⚡',
       title: 'Первый на кнопке',
       description: `${first.name} уже ткнул вариант. Уверенность или паника?`,
+      recipient: first.name,
       tone: 'safe'
     });
   }
@@ -525,6 +526,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
       icon: '↔',
       title: 'Переобулся в воздухе',
       description: `${changer.name} сменил ответ. Минус очки, плюс драма.`,
+      recipient: changer.name,
       tone: 'chaos'
     });
   }
@@ -536,6 +538,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
       icon: '⏱',
       title: 'На последней секунде',
       description: `${late.name} нажал так поздно, что таймер вспотел.`,
+      recipient: late.name,
       tone: 'safe'
     });
   }
@@ -546,6 +549,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
       icon: '✓',
       title: 'Все в деле',
       description: 'Все ответили. Теперь ждём, кто зря был таким уверенным.',
+      recipient: 'Все игроки',
       tone: 'safe'
     });
   }
@@ -565,6 +569,7 @@ function buildRevealAchievements(room: Room): Achievement[] {
       icon: '💀',
       title: 'Коллективный промах',
       description: 'Никто не угадал. Трек победил людей.',
+      recipient: 'Никто',
       tone: 'bad'
     });
   }
@@ -575,6 +580,7 @@ function buildRevealAchievements(room: Room): Achievement[] {
       icon: '🎯',
       title: 'Один в поле угадал',
       description: `${correct[0].name} вытащил раунд, пока остальные слушали другой плейлист.`,
+      recipient: correct[0].name,
       tone: 'good'
     });
   }
@@ -586,6 +592,7 @@ function buildRevealAchievements(room: Room): Achievement[] {
       icon: '⚡',
       title: 'Быстрее Shazam',
       description: `${fastest.name}: ${formatSeconds(fastest.lastAnswer.responseMs)} сек до правильного ответа.`,
+      recipient: fastest.name,
       tone: 'good'
     });
   }
@@ -597,6 +604,7 @@ function buildRevealAchievements(room: Room): Achievement[] {
       icon: '🧠',
       title: 'Переобулся удачно',
       description: `${changedCorrect.name} сменил ответ и всё-таки попал. Мозг загрузился не сразу.`,
+      recipient: changedCorrect.name,
       tone: 'good'
     });
   }
@@ -610,6 +618,7 @@ function buildRevealAchievements(room: Room): Achievement[] {
       icon: '🔁',
       title: 'Руки быстрее мозга',
       description: `${biggestPenalty.name} сменил ответ ${biggestPenalty.lastAnswer.answerChanges} раз. Интерфейс выдержал.`,
+      recipient: biggestPenalty.name,
       tone: biggestPenalty.lastAnswer.points < 0 ? 'bad' : 'chaos'
     });
   }
@@ -652,6 +661,7 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
       icon: '⚡',
       title: 'Самый быстрый палец',
       description: `${fastest.playerName} угадал "${fastest.trackTitle}" за ${formatSeconds(fastest.responseMs)} сек.`,
+      recipient: fastest.playerName,
       tone: 'good'
     });
   }
@@ -662,6 +672,7 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
       icon: '🏆',
       title: 'Лучший удар раунда',
       description: `${best.playerName} забрал ${formatSignedScore(best.points)} на "${best.trackTitle}".`,
+      recipient: best.playerName,
       tone: best.points > 0 ? 'good' : 'bad'
     });
   }
@@ -673,6 +684,7 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
       icon: '🎯',
       title: 'Один против всех',
       description: `${answer.playerName} единственный понял, что играет "${onlyCorrectRound.trackTitle}".`,
+      recipient: answer.playerName,
       tone: 'good'
     });
   }
@@ -683,6 +695,7 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
       icon: '🔁',
       title: 'Перевыбор года',
       description: `${penalty.playerName} дощёлкал до ${formatSignedScore(penalty.points)}. Зато не скучно.`,
+      recipient: penalty.playerName,
       tone: 'bad'
     });
   }
@@ -693,6 +706,7 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
       icon: '🌀',
       title: 'Крутил рулетку',
       description: `${mostChanges.playerName} сменил ответ ${mostChanges.answerChanges} раз за один раунд.`,
+      recipient: mostChanges.playerName,
       tone: 'chaos'
     });
   }
@@ -703,6 +717,7 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
       icon: '💀',
       title: 'Раунд без свидетелей',
       description: `"${noCorrectRound.trackTitle}" не угадал никто. Даже трек удивился.`,
+      recipient: 'Никто',
       tone: 'bad'
     });
   }
