@@ -59,6 +59,13 @@ type PlayerInput = {
   playerName: string;
 };
 
+type AnswerOptionKind = 'title' | 'artist';
+
+type AnswerOptionCandidate = {
+  track: TrackMetadata;
+  kind: AnswerOptionKind;
+};
+
 const DEFAULT_SETTINGS: RoomSettings = {
   themeId: 'chart-russia',
   themeIds: [],
@@ -197,24 +204,14 @@ export class GameEngine {
     const correctPool = available.length > 0 ? available : tracks;
     const correctTrack = chooseCorrectTrack(correctPool, tracks, room.usedTrackIds);
     const answerMode = room.settings.answerMode;
-    const correctOptionLabel = answerOptionLabel(correctTrack, answerMode);
-    const freshDistractorPool = uniqueByOptionLabel(optionTracks, answerMode).filter(
-      (track) => track.id !== correctTrack.id && normalizeTitle(answerOptionLabel(track, answerMode)) !== normalizeTitle(correctOptionLabel)
-    );
-    const distractorPool =
-      freshDistractorPool.filter((track) => !room.usedOptionTitles.has(normalizeTitle(answerOptionLabel(track, answerMode)))).length >= 3
-        ? freshDistractorPool.filter((track) => !room.usedOptionTitles.has(normalizeTitle(answerOptionLabel(track, answerMode))))
-        : freshDistractorPool;
-    const sameScriptDistractors = distractorPool.filter((track) => titleScriptBucket(answerOptionLabel(track, answerMode)) === titleScriptBucket(correctOptionLabel));
-    const distractors = shuffle(sameScriptDistractors.length >= 3 ? sameScriptDistractors : distractorPool).slice(0, 3);
-    const selected = [correctTrack, ...distractors];
+    const selected = buildAnswerOptionCandidates(correctTrack, optionTracks, answerMode, room.round + 1, room.usedOptionTitles);
     if (selected.length < 4) {
       throw new Error('At least four unique playable tracks are required');
     }
     const options = shuffle(
-      selected.map<TrackOption>((track) => ({
+      selected.map<TrackOption>(({ track, kind }) => ({
         id: track.id,
-        title: answerOptionLabel(track, answerMode)
+        title: answerOptionLabel(track, kind)
       }))
     );
 
@@ -225,8 +222,8 @@ export class GameEngine {
     room.round += 1;
     room.status = 'question';
     room.usedTrackIds.add(correctTrack.id);
-    for (const track of selected) {
-      room.usedOptionTitles.add(normalizeTitle(answerOptionLabel(track, answerMode)));
+    for (const { track, kind } of selected) {
+      room.usedOptionTitles.add(normalizeTitle(answerOptionLabel(track, kind)));
     }
     const durationMsFinal = durationMs ?? room.settings.questionDurationMs;
     room.currentQuestion = {
@@ -880,12 +877,68 @@ function maxQuestionDurationMs(difficulty: RoomSettings['difficulty']): number {
   return difficulty === 'easy' ? 15_000 : 30_000;
 }
 
-function uniqueByOptionLabel<T extends TrackMetadata>(tracks: T[], answerMode: RoomSettings['answerMode']): T[] {
+function buildAnswerOptionCandidates(
+  correctTrack: Track,
+  optionTracks: TrackMetadata[],
+  answerMode: RoomSettings['answerMode'],
+  round: number,
+  usedOptionLabels: Set<string>
+): AnswerOptionCandidate[] {
+  if (answerMode !== 'mixed') {
+    const kind: AnswerOptionKind = answerMode === 'artist' ? 'artist' : 'title';
+    const distractors = selectDistractorTracks(correctTrack, optionTracks, kind, 3, usedOptionLabels, new Set([correctTrack.id]));
+    return [{ track: correctTrack, kind }, ...distractors.map((track) => ({ track, kind }))];
+  }
+
+  const correctKind: AnswerOptionKind = round % 2 === 0 ? 'artist' : 'title';
+  const selected: AnswerOptionCandidate[] = [{ track: correctTrack, kind: correctKind }];
+  const selectedTrackIds = new Set<string>([correctTrack.id]);
+  const titleCount = correctKind === 'title' ? 1 : 0;
+  const artistCount = correctKind === 'artist' ? 1 : 0;
+
+  const titleDistractors = selectDistractorTracks(correctTrack, optionTracks, 'title', 2 - titleCount, usedOptionLabels, selectedTrackIds);
+  for (const track of titleDistractors) {
+    selected.push({ track, kind: 'title' });
+    selectedTrackIds.add(track.id);
+  }
+
+  const artistDistractors = selectDistractorTracks(correctTrack, optionTracks, 'artist', 2 - artistCount, usedOptionLabels, selectedTrackIds);
+  for (const track of artistDistractors) {
+    selected.push({ track, kind: 'artist' });
+    selectedTrackIds.add(track.id);
+  }
+
+  return selected;
+}
+
+function selectDistractorTracks(
+  correctTrack: TrackMetadata,
+  optionTracks: TrackMetadata[],
+  kind: AnswerOptionKind,
+  count: number,
+  usedOptionLabels: Set<string>,
+  excludedTrackIds: Set<string>
+): TrackMetadata[] {
+  if (count <= 0) {
+    return [];
+  }
+
+  const correctLabel = answerOptionLabel(correctTrack, kind);
+  const candidates = uniqueByOptionLabel(optionTracks, kind).filter(
+    (track) => !excludedTrackIds.has(track.id) && normalizeTitle(answerOptionLabel(track, kind)) !== normalizeTitle(correctLabel)
+  );
+  const freshCandidates = candidates.filter((track) => !usedOptionLabels.has(normalizeTitle(answerOptionLabel(track, kind))));
+  const pool = freshCandidates.length >= count ? freshCandidates : candidates;
+  const sameScriptPool = pool.filter((track) => titleScriptBucket(answerOptionLabel(track, kind)) === titleScriptBucket(correctLabel));
+  return shuffle(sameScriptPool.length >= count ? sameScriptPool : pool).slice(0, count);
+}
+
+function uniqueByOptionLabel<T extends TrackMetadata>(tracks: T[], kind: AnswerOptionKind): T[] {
   const seen = new Set<string>();
   const unique: T[] = [];
 
   for (const track of tracks) {
-    const key = normalizeTitle(answerOptionLabel(track, answerMode));
+    const key = normalizeTitle(answerOptionLabel(track, kind));
     if (!seen.has(key)) {
       seen.add(key);
       unique.push(track);
@@ -895,14 +948,8 @@ function uniqueByOptionLabel<T extends TrackMetadata>(tracks: T[], answerMode: R
   return unique;
 }
 
-function answerOptionLabel(track: TrackMetadata, answerMode: RoomSettings['answerMode']): string {
-  if (answerMode === 'artist') {
-    return track.artist;
-  }
-  if (answerMode === 'mixed') {
-    return `${track.artist} — ${track.title}`;
-  }
-  return track.title;
+function answerOptionLabel(track: TrackMetadata, kind: AnswerOptionKind): string {
+  return kind === 'artist' ? track.artist : track.title;
 }
 
 function sanitizeAnswerMode(value: unknown, fallback: RoomSettings['answerMode']): RoomSettings['answerMode'] {

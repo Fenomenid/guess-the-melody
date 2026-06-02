@@ -808,7 +808,7 @@ function Lobby({
               onClick={() => onSettingsChange({ answerMode: 'mixed' })}
             >
               <strong>Смешанный</strong>
-              <small>Артист и трек вместе</small>
+              <small>2 исполнителя и 2 трека</small>
             </button>
           </div>
         </label>
@@ -1095,7 +1095,7 @@ function answerModePrompt(answerMode: Room['settings']['answerMode']): string {
     return 'Выберите исполнителя';
   }
   if (answerMode === 'mixed') {
-    return 'Выберите исполнителя и трек';
+    return 'Выберите правильный вариант';
   }
   return 'Выберите название трека';
 }

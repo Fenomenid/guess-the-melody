@@ -74,7 +74,7 @@ describe('GameEngine', () => {
     expect(question.options.map((option) => option.title).sort()).toEqual(['Artist four', 'Artist one', 'Artist three', 'Artist two']);
   });
 
-  it('can show artist and song together as mixed answer options', () => {
+  it('can mix artist and song title answer options', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
     engine.updateSettings('ROOM42', { answerMode: 'mixed' });
@@ -86,10 +86,13 @@ describe('GameEngine', () => {
     ];
 
     const question = engine.startNextRound('ROOM42', mixedTracks, 10_000, 1000);
+    const artistLabels = new Set(mixedTracks.map((track) => track.artist));
+    const titleLabels = new Set(mixedTracks.map((track) => track.title));
 
     expect(question.options).toHaveLength(4);
-    expect(question.options.every((option) => option.title.includes(' — '))).toBe(true);
-    expect(question.options).toContainEqual({ id: question.correctTrack.id, title: `${question.correctTrack.artist} — ${question.correctTrack.title}` });
+    expect(question.options.filter((option) => artistLabels.has(option.title))).toHaveLength(2);
+    expect(question.options.filter((option) => titleLabels.has(option.title))).toHaveLength(2);
+    expect(question.options).toContainEqual({ id: question.correctTrack.id, title: question.correctTrack.title });
   });
 
   it('prefers answer options with the same title script as the correct track', () => {
