@@ -181,6 +181,15 @@ const THEMES: ThemeConfig[] = [
     metatagIds: ['rap', 'hip-hop', 'rusrap', 'russian-rap']
   },
   {
+    id: 'genre-russian-rap',
+    title: 'Русский рэп',
+    description: 'Русский рэп и хип-хоп из подборок Яндекс Музыки',
+    source: 'yandex',
+    stationIds: ['genre:rusrap'],
+    metatagIds: ['rusrap', 'russian-rap'],
+    optionQueries: ['русский рэп', 'russian rap', 'ru hip hop']
+  },
+  {
     id: 'genre-electronic',
     title: 'Электроника',
     description: 'Электронные подборки и плейлисты Яндекс Музыки',

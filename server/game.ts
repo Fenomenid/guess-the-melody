@@ -48,8 +48,8 @@ const DEFAULT_SETTINGS: RoomSettings = {
   difficulty: 'easy',
   winCondition: 'rounds',
   rounds: 5,
-  targetScore: 3000,
-  questionDurationMs: 15_000,
+  targetScore: 10_000,
+  questionDurationMs: 10_000,
   allowAnswerChange: false
 };
 
@@ -113,6 +113,8 @@ export class GameEngine {
     const requestedThemeIds = settings.themeIds ?? (settings.themeId ? [settings.themeId] : room.settings.themeIds ?? [room.settings.themeId]);
     const themeIds = sanitizeThemeIds(requestedThemeIds, true);
 
+    const difficulty = settings.difficulty === 'hard' ? 'hard' : settings.difficulty === 'easy' ? 'easy' : room.settings.difficulty;
+
     room.settings = {
       ...room.settings,
       ...settings,
@@ -121,11 +123,11 @@ export class GameEngine {
       playlistUrl,
       playlistUrls,
       playlistSources,
-      difficulty: settings.difficulty === 'hard' ? 'hard' : settings.difficulty === 'easy' ? 'easy' : room.settings.difficulty,
+      difficulty,
       winCondition: settings.winCondition === 'score' ? 'score' : settings.winCondition === 'rounds' ? 'rounds' : room.settings.winCondition,
       rounds: clampInteger(settings.rounds ?? room.settings.rounds, 1, 100),
       targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 200_000),
-      questionDurationMs: clampInteger(settings.questionDurationMs ?? room.settings.questionDurationMs, 5_000, 30_000),
+      questionDurationMs: clampInteger(settings.questionDurationMs ?? room.settings.questionDurationMs, 5_000, maxQuestionDurationMs(difficulty)),
       allowAnswerChange: typeof settings.allowAnswerChange === 'boolean' ? settings.allowAnswerChange : room.settings.allowAnswerChange
     };
 
@@ -254,6 +256,7 @@ export class GameEngine {
     room.currentQuestion = undefined;
     for (const player of room.players.values()) {
       player.score = 0;
+      player.correctAnswers = 0;
       player.lastAnswer = undefined;
     }
     return toPublicRoom(room);
@@ -344,7 +347,12 @@ export class GameEngine {
         code: snapshot.code.toUpperCase(),
         status: restoredStatus,
         settings: normalizeSettings(snapshot.settings),
-        players: new Map(snapshot.players.map((player) => [player.id, { ...player, connected: false, lastAnswer: undefined }])),
+        players: new Map(
+          snapshot.players.map((player) => [
+            player.id,
+            { ...player, correctAnswers: player.correctAnswers ?? 0, connected: false, lastAnswer: undefined }
+          ])
+        ),
         currentQuestion: restoredStatus === 'finished' ? snapshot.currentQuestion : undefined,
         usedTrackIds: new Set(snapshot.usedTrackIds),
         usedOptionTitles: new Set(snapshot.usedOptionTitles ?? []),
@@ -371,6 +379,9 @@ export class GameEngine {
 
     for (const player of room.players.values()) {
       player.score += player.lastAnswer?.points ?? 0;
+      if (player.lastAnswer?.isCorrect) {
+        player.correctAnswers += 1;
+      }
     }
     question.scoresApplied = true;
   }
@@ -405,7 +416,7 @@ function toPublicRoom(room: Room, revealCorrectTrack = false): PublicRoom {
     code: room.code,
     status: room.status,
     settings: room.settings,
-    players: sortPublicPlayers([...room.players.values()].map((player) => toPublicPlayer(player, revealCorrectTrack)), revealCorrectTrack),
+    players: sortPublicPlayers([...room.players.values()].map((player) => toPublicPlayer(player, revealCorrectTrack)), room.status, revealCorrectTrack),
     currentQuestion: question,
     correctTrack: revealCorrectTrack ? room.currentQuestion?.correctTrack : undefined,
     round: room.round,
@@ -424,11 +435,14 @@ function toPublicPlayer(player: Player, revealAnswer: boolean): PublicPlayer {
   };
 }
 
-function sortPublicPlayers(players: PublicPlayer[], revealRound: boolean): PublicPlayer[] {
+function sortPublicPlayers(players: PublicPlayer[], status: RoomStatus, revealRound: boolean): PublicPlayer[] {
+  if (status === 'finished') {
+    return players.sort((a, b) => b.score - a.score || b.correctAnswers - a.correctAnswers || publicAnswerPoints(b) - publicAnswerPoints(a));
+  }
   if (revealRound) {
     return players.sort((a, b) => publicAnswerPoints(b) - publicAnswerPoints(a) || b.score - a.score);
   }
-  return players.sort((a, b) => b.score - a.score);
+  return players.sort((a, b) => b.score - a.score || b.correctAnswers - a.correctAnswers);
 }
 
 function publicAnswerPoints(player: PublicPlayer): number {
@@ -447,6 +461,7 @@ function createPlayer(input: PlayerInput, isHost: boolean): Player {
     id: input.playerId,
     name: sanitizeName(input.playerName),
     score: 0,
+    correctAnswers: 0,
     connected: true,
     isHost
   };
@@ -538,9 +553,17 @@ function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
     winCondition: settings.winCondition === 'score' ? 'score' : 'rounds',
     rounds: clampInteger(settings.rounds ?? DEFAULT_SETTINGS.rounds, 1, 100),
     targetScore: clampInteger(settings.targetScore ?? DEFAULT_SETTINGS.targetScore, 500, 200_000),
-    questionDurationMs: clampInteger(settings.questionDurationMs ?? DEFAULT_SETTINGS.questionDurationMs, 5_000, 30_000),
+    questionDurationMs: clampInteger(
+      settings.questionDurationMs ?? DEFAULT_SETTINGS.questionDurationMs,
+      5_000,
+      maxQuestionDurationMs(settings.difficulty === 'hard' ? 'hard' : DEFAULT_SETTINGS.difficulty)
+    ),
     allowAnswerChange: settings.allowAnswerChange ?? DEFAULT_SETTINGS.allowAnswerChange
   };
+}
+
+function maxQuestionDurationMs(difficulty: RoomSettings['difficulty']): number {
+  return difficulty === 'easy' ? 15_000 : 30_000;
 }
 
 function uniqueByTitle<T extends TrackMetadata>(tracks: T[]): T[] {

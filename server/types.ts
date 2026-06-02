@@ -48,6 +48,7 @@ export type Player = {
   id: string;
   name: string;
   score: number;
+  correctAnswers: number;
   connected: boolean;
   isHost: boolean;
   lastAnswer?: PlayerAnswerResult;

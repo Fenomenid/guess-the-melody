@@ -349,7 +349,7 @@ function scheduleNextRound(code: string): void {
       io.to(room.code).emit('room_state', engine.getPublicRoom(room.code));
       console.warn(toClientError(error));
     });
-  }, 10_000);
+  }, 5_000);
 
   nextRoundTimers.set(room.code, timer);
 }

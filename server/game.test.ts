@@ -18,6 +18,8 @@ describe('GameEngine', () => {
     expect(room.players).toHaveLength(1);
     expect(room.players[0]).toMatchObject({ id: 'p1', isHost: true, connected: true });
     expect(room.settings.themeIds).toEqual([]);
+    expect(room.settings.questionDurationMs).toBe(10_000);
+    expect(room.settings.targetScore).toBe(10_000);
   });
 
   it('starts a round with four answer options and no public correct answer', () => {
@@ -154,6 +156,28 @@ describe('GameEngine', () => {
     expect(revealed.status).toBe('finished');
   });
 
+  it('orders final standings by total score instead of last round points', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.updateSettings('ROOM42', { rounds: 2 });
+
+    const firstQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.submitAnswer('ROOM42', 'leader', firstQuestion.correctOptionId, 1000);
+    engine.revealRound('ROOM42');
+
+    const secondQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 20_000);
+    engine.submitAnswer('ROOM42', 'leader', secondQuestion.correctOptionId, 29_000);
+    engine.submitAnswer('ROOM42', 'chaser', secondQuestion.correctOptionId, 21_000);
+    const finalRoom = engine.revealRound('ROOM42');
+
+    expect(finalRoom.status).toBe('finished');
+    expect(finalRoom.players[0]).toMatchObject({ id: 'leader' });
+    expect(finalRoom.players[0].score).toBeGreaterThan(finalRoom.players[1].score);
+    expect(finalRoom.players[0].lastAnswer).toMatchObject({ points: 550 });
+    expect(finalRoom.players[1].lastAnswer).toMatchObject({ points: 950 });
+  });
+
   it('allows longer games and higher score targets', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
@@ -173,6 +197,19 @@ describe('GameEngine', () => {
 
     expect(hardRoom.settings.difficulty).toBe('hard');
     expect(easyRoom.settings.difficulty).toBe('easy');
+  });
+
+  it('limits easy mode answer time to fifteen seconds', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+
+    const hardRoom = engine.updateSettings('ROOM42', { difficulty: 'hard', questionDurationMs: 30_000 });
+    const easyRoom = engine.updateSettings('ROOM42', { difficulty: 'easy' });
+    const explicitEasyRoom = engine.updateSettings('ROOM42', { questionDurationMs: 30_000 });
+
+    expect(hardRoom.settings.questionDurationMs).toBe(30_000);
+    expect(easyRoom.settings.questionDurationMs).toBe(15_000);
+    expect(explicitEasyRoom.settings.questionDurationMs).toBe(15_000);
   });
 
   it('rejects host-only actions from regular players', () => {

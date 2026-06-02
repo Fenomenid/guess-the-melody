@@ -36,6 +36,7 @@ type Player = {
   id: string;
   name: string;
   score: number;
+  correctAnswers: number;
   connected: boolean;
   isHost: boolean;
   lastAnswer?: { hasAnswered: true } | { optionId: string; isCorrect: boolean; responseMs: number; points: number };
@@ -140,6 +141,7 @@ function App() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const leftRoomCodesRef = useRef(new Set<string>());
 
   const me = useMemo(() => room?.players.find((player) => player.id === playerId), [playerId, room]);
   const isHost = Boolean(me?.isHost);
@@ -218,6 +220,9 @@ function App() {
   }, [room?.code]);
 
   function handleRoomState(nextRoom: Room) {
+    if (leftRoomCodesRef.current.has(nextRoom.code)) {
+      return;
+    }
     setRoom(nextRoom);
     if (window.location.pathname !== `/room/${nextRoom.code}`) {
       window.history.replaceState(null, '', `/room/${nextRoom.code}`);
@@ -235,8 +240,8 @@ function App() {
         setError(response.error);
         return;
       }
-      if (response.data && onSuccess) {
-        onSuccess(response.data);
+      if (onSuccess && Object.prototype.hasOwnProperty.call(response, 'data')) {
+        onSuccess(response.data as T);
       }
     });
   }
@@ -258,6 +263,7 @@ function App() {
       return;
     }
     localStorage.setItem('playerName', name);
+    leftRoomCodesRef.current.delete(joinCode.trim().toUpperCase());
     emit<Room>('join_room', { code: joinCode, playerId, playerName: name }, handleRoomState, 'Входим в комнату');
   }
 
@@ -279,9 +285,15 @@ function App() {
 
   function leaveRoom() {
     if (!room) return;
+    const roomCode = room.code;
+    leftRoomCodesRef.current.add(roomCode);
+    setRoom(null);
+    setError('');
+    setVolumeOpen(false);
+    window.history.replaceState(null, '', '/');
     emit<Room | null>(
       'leave_room',
-      { code: room.code, playerId },
+      { code: roomCode, playerId },
       (nextRoom) => {
         if (nextRoom) {
           setRoom(nextRoom);
@@ -419,7 +431,7 @@ function App() {
             <Copy size={18} />
             {copied ? 'Скопировано' : 'Пригласить'}
           </button>
-          <button className="secondary icon-text" onClick={goHome}>
+          <button className="secondary icon-text" onClick={leaveRoom}>
             <DoorOpen size={18} />
             Покинуть
           </button>
@@ -551,7 +563,8 @@ function Lobby({
 
   function commitSeconds() {
     const value = Number(secondsDraft);
-    const seconds = Number.isFinite(value) ? Math.max(5, Math.min(30, Math.round(value))) : room.settings.questionDurationMs / 1000;
+    const maxSeconds = getMaxAnswerSeconds(room.settings.difficulty);
+    const seconds = Number.isFinite(value) ? Math.max(5, Math.min(maxSeconds, Math.round(value))) : room.settings.questionDurationMs / 1000;
     setSecondsDraft(String(seconds));
     if (seconds * 1000 !== room.settings.questionDurationMs) {
       onSettingsChange({ questionDurationMs: seconds * 1000 });
@@ -804,29 +817,31 @@ function Lobby({
             <option value="score">По очкам</option>
           </select>
         </label>
-        <label className="field">
-          <span>Раунды</span>
-          <input
-            type="number"
-            min={1}
-            max={100}
-            disabled={!isHost || isBusy}
-            value={roundsDraft}
-            onBlur={commitRounds}
-            onChange={(event) => setRoundsDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.currentTarget.blur();
-              }
-            }}
-          />
-        </label>
+        {room.settings.winCondition === 'rounds' && (
+          <label className="field">
+            <span>Раунды</span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              disabled={!isHost || isBusy}
+              value={roundsDraft}
+              onBlur={commitRounds}
+              onChange={(event) => setRoundsDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          </label>
+        )}
         <label className="field">
           <span>Секунд на ответ</span>
           <input
             type="number"
             min={5}
-            max={30}
+            max={getMaxAnswerSeconds(room.settings.difficulty)}
             disabled={!isHost || isBusy}
             value={secondsDraft}
             onBlur={commitSeconds}
@@ -838,18 +853,20 @@ function Lobby({
             }}
           />
         </label>
-        <label className="field">
-          <span>Очки для победы</span>
-          <input
-            type="number"
-            min={500}
-            max={200000}
-            disabled={!isHost || isBusy || room.settings.winCondition !== 'score'}
-            value={targetScoreDraft}
-            onBlur={commitTargetScore}
-            onChange={(event) => setTargetScoreDraft(event.target.value)}
-          />
-        </label>
+        {room.settings.winCondition === 'score' && (
+          <label className="field">
+            <span>Очки для победы</span>
+            <input
+              type="number"
+              min={500}
+              max={200000}
+              disabled={!isHost || isBusy}
+              value={targetScoreDraft}
+              onBlur={commitTargetScore}
+              onChange={(event) => setTargetScoreDraft(event.target.value)}
+            />
+          </label>
+        )}
         <label className="setting-toggle wide-field">
           <input
             type="checkbox"
@@ -907,6 +924,10 @@ function getPlaylistSources(settings: Room['settings']): PlaylistSource[] {
 
 function defaultPlaylistSourceName(url: string, index: number): string {
   return /\/album\//i.test(url) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`;
+}
+
+function getMaxAnswerSeconds(difficulty: Room['settings']['difficulty']): number {
+  return difficulty === 'easy' ? 15 : 30;
 }
 
 function PreparingStage() {
@@ -970,7 +991,7 @@ function QuestionStage({
 
       <div className="round-header">
         <span>
-          Раунд {question.round} из {room.settings.rounds}
+          {room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}
         </span>
         <span>{me?.lastAnswer ? 'Ответ принят' : 'Выберите название трека'}</span>
       </div>
@@ -1247,7 +1268,7 @@ function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, se
 }
 
 function useAutoNextCountdown(status: Room['status'], round: number): number {
-  const [secondsLeft, setSecondsLeft] = useState(10);
+  const [secondsLeft, setSecondsLeft] = useState(5);
 
   useEffect(() => {
     if (status !== 'round-result') {
@@ -1256,10 +1277,10 @@ function useAutoNextCountdown(status: Room['status'], round: number): number {
     }
 
     const startedAt = Date.now();
-    setSecondsLeft(10);
+    setSecondsLeft(5);
     const interval = window.setInterval(() => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-      setSecondsLeft(Math.max(0, 10 - elapsed));
+      setSecondsLeft(Math.max(0, 5 - elapsed));
     }, 250);
 
     return () => window.clearInterval(interval);
