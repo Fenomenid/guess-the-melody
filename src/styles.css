@@ -485,23 +485,35 @@ select:focus {
   font-weight: 800;
 }
 
+.quick-themes-field {
+  padding-top: 2px;
+}
+
 .theme-picker {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
 }
 
 .theme-choice {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
-  padding: 8px 10px;
+  min-height: 46px;
+  padding: 10px 12px;
   border: 1px solid #c3b6a3;
   border-radius: 8px;
   color: #3b342a;
   background: #ded4c4;
   font-weight: 900;
+  overflow: hidden;
+}
+
+.theme-choice span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .theme-choice input {

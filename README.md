@@ -54,7 +54,7 @@ Useful fields:
 - `allowFullTrackFallback: false` means full tracks are not used as a fallback.
 - `lastLoadStats.difficulty` shows whether the last loaded pool used `easy` trailers or `hard` full-track starts.
 - `lastLoadStats.smartPreviewAudioUrls` shows how many playable trailer URLs were found in easy mode.
-- `lastFallbackReason` explains why the server switched to demo fallback after a track-loading attempt.
+- `lastFallbackReason` explains why the server switched to the reserved fallback pool after a track-loading attempt.
 
 If `lastFallbackReason` is empty, create a room, start a game, then refresh diagnostics. The reason is recorded only after the server tries to load tracks.
 

@@ -264,7 +264,7 @@ describe('GameEngine', () => {
     expect(room.settings.playlistUrls?.at(-1)).toBe('https://music.yandex.ru/album/1009');
   });
 
-  it('falls back to a default theme when playlist URL is cleared with no themes selected', () => {
+  it('keeps quick themes empty when playlist URL is cleared', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
     engine.updateSettings('ROOM42', {
@@ -275,7 +275,7 @@ describe('GameEngine', () => {
     const room = engine.updateSettings('ROOM42', { playlistUrl: '', themeIds: [] });
 
     expect(room.settings.playlistUrl).toBeUndefined();
-    expect(room.settings.themeIds).toEqual(['chart-russia']);
+    expect(room.settings.themeIds).toEqual([]);
     expect(room.settings.themeId).toBe('chart-russia');
   });
 

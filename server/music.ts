@@ -228,12 +228,6 @@ const THEMES: ThemeConfig[] = [
     stationIds: ['genre:kpop', 'genre:k-pop'],
     metatagIds: ['k-pop', 'kpop'],
     optionQueries: ['k-pop', 'kpop', 'korean pop']
-  },
-  {
-    id: 'demo-pop',
-    title: 'Демо: fallback',
-    description: 'Резервный набор, если API Яндекса недоступен',
-    source: 'demo'
   }
 ];
 
@@ -269,7 +263,7 @@ export class MusicService {
           ? source.themeIds
           : ['chart-russia'];
 
-    if (this.forceDemo || themeIds.includes('demo-pop')) {
+    if (this.forceDemo) {
       return toDemoPool(false);
     }
 
@@ -359,7 +353,7 @@ export class MusicService {
 
   private fallback(reason: string): TrackPool {
     this.lastFallbackReason = reason;
-    console.warn(`[music] using demo fallback: ${reason}`);
+    console.warn(`[music] using reserved fallback pool: ${reason}`);
     return toDemoPool(true);
   }
 

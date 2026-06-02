@@ -111,8 +111,7 @@ export class GameEngine {
     const playlistUrls = playlistSources.map((source) => source.url);
     const playlistUrl = playlistUrls[0];
     const requestedThemeIds = settings.themeIds ?? (settings.themeId ? [settings.themeId] : room.settings.themeIds ?? [room.settings.themeId]);
-    const allowEmptyThemeIds = playlistUrls.length > 0 || (!playlistUpdateProvided && !themeUpdateProvided && room.settings.themeIds.length === 0);
-    const themeIds = sanitizeThemeIds(requestedThemeIds, allowEmptyThemeIds);
+    const themeIds = sanitizeThemeIds(requestedThemeIds, true);
 
     room.settings = {
       ...room.settings,

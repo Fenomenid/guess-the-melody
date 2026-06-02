@@ -634,9 +634,7 @@ function Lobby({
     const nextThemeIds = currentThemeIds.includes(themeId)
       ? currentThemeIds.filter((id) => id !== themeId)
       : [...currentThemeIds, themeId];
-    if (nextThemeIds.length > 0 || selectedPlaylistSources.length > 0) {
-      onSettingsChange({ themeIds: nextThemeIds });
-    }
+    onSettingsChange({ themeIds: nextThemeIds });
   }
 
   const selectedPlaylistSources = getPlaylistSources(room.settings);
@@ -778,7 +776,7 @@ function Lobby({
             )}
           </div>
         </label>
-        <label className="field">
+        <label className="field wide-field quick-themes-field">
           <span>Быстрые темы</span>
           <div className="theme-picker">
             {themes.map((theme) => (
