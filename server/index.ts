@@ -49,6 +49,27 @@ app.get('/api/music/diagnostics', (_request, response) => {
   response.json({ data: music.diagnostics() });
 });
 
+app.get('/api/music/probe', async (request, response) => {
+  const difficulty = request.query.difficulty === 'hard' ? 'hard' : 'easy';
+  const limit = clampProbeLimit(Number(request.query.limit));
+  try {
+    const results = await music.probe(limit, difficulty);
+    response.json({
+      data: {
+        difficulty,
+        results: results.map(({ id, title, hasAudio, isSmartPreview }) => ({
+          id,
+          title,
+          hasAudio,
+          isSmartPreview
+        }))
+      }
+    });
+  } catch (error) {
+    response.status(502).json({ error: toClientError(error) });
+  }
+});
+
 app.use(express.static(path.join(process.cwd(), 'dist')));
 app.get(/^\/(?!api).*/, (_request, response) => {
   response.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
@@ -333,6 +354,13 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
     questionDurationMs: typeof raw.questionDurationMs === 'number' ? raw.questionDurationMs : undefined,
     allowAnswerChange: typeof raw.allowAnswerChange === 'boolean' ? raw.allowAnswerChange : undefined
   };
+}
+
+function clampProbeLimit(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 5;
+  }
+  return Math.max(1, Math.min(20, Math.round(value)));
 }
 
 function estimateRoundsForScore(targetScore: number): number {

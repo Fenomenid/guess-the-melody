@@ -121,6 +121,7 @@ export type MusicDiagnostics = {
 };
 
 type TrackLoadStats = {
+  difficulty: 'easy' | 'hard';
   candidates: number;
   options: number;
   playable: number;
@@ -255,6 +256,7 @@ export class MusicService {
 
   async prepareTrackPool(source: TrackSourceInput, options: { playableLimit: number; optionLimit: number }): Promise<TrackPool> {
     const playlistSources = typeof source === 'string' ? [] : normalizePlaylistSources(source.playlistSources, source.playlistUrls, source.playlistUrl);
+    const difficulty = typeof source === 'string' ? 'easy' : source.difficulty ?? 'easy';
     const themeIds =
       typeof source === 'string'
         ? [source]
@@ -270,10 +272,10 @@ export class MusicService {
       const candidates = uniqueByTrackId(await this.getSourceCandidates(themeIds, playlistSources));
       const optionTracks = uniqueByTitle(candidates.map(toTrackMetadata)).slice(0, options.optionLimit);
       const playableTracks: Track[] = [];
-      const stats = createTrackLoadStats(candidates.length, optionTracks.length);
+      const stats = createTrackLoadStats(candidates.length, optionTracks.length, difficulty);
 
       for (const candidate of candidates) {
-        const audioUrl = await this.resolveAudioUrl(candidate, typeof source === 'string' ? 'easy' : source.difficulty ?? 'easy', stats);
+        const audioUrl = await this.resolveAudioUrl(candidate, difficulty, stats);
         if (audioUrl) {
           playableTracks.push({
             ...toTrackMetadata(candidate),
@@ -313,16 +315,20 @@ export class MusicService {
     return pool.playableTracks;
   }
 
-  async probe(limit = 10): Promise<Array<{ id: string; title: string; hasAudio: boolean; audioUrl?: string }>> {
+  async probe(
+    limit = 10,
+    difficulty: 'easy' | 'hard' = 'easy'
+  ): Promise<Array<{ id: string; title: string; hasAudio: boolean; isSmartPreview: boolean; audioUrl?: string }>> {
     const candidates = await this.getChartCandidates('russia');
     const results = [];
 
     for (const candidate of candidates.slice(0, limit)) {
-      const audioUrl = await this.resolveAudioUrl(candidate, 'easy');
+      const audioUrl = await this.resolveAudioUrl(candidate, difficulty);
       results.push({
         id: String(candidate.id),
         title: candidate.title,
         hasAudio: Boolean(audioUrl),
+        isSmartPreview: Boolean(audioUrl?.includes('/preview192')),
         audioUrl
       });
     }
@@ -902,8 +908,9 @@ function interleaveSourceGroups<T>(groups: T[][]): T[] {
   return result;
 }
 
-function createTrackLoadStats(candidates: number, options: number): TrackLoadStats {
+function createTrackLoadStats(candidates: number, options: number, difficulty: 'easy' | 'hard'): TrackLoadStats {
   return {
+    difficulty,
     candidates,
     options,
     playable: 0,
