@@ -157,7 +157,7 @@ function App() {
   const [isBusy, setIsBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState('');
   const [copied, setCopied] = useState(false);
-  const [volume, setVolume] = useState(() => Number(localStorage.getItem('volume') ?? 0.8));
+  const [volume, setVolume] = useState(() => Number(localStorage.getItem('volume') ?? 0.1));
   const [volumeOpen, setVolumeOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState('');
