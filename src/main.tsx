@@ -748,7 +748,8 @@ function Lobby({
                   addPlaylistUrl();
                 }
               }}
-              placeholder="Ссылка на плейлист или альбом Яндекс Музыки"
+              placeholder="Ссылка на плейлист"
+              title="Вставьте ссылку на плейлист или альбом Яндекс Музыки"
             />
             <input
               disabled={!isHost || isBusy || selectedPlaylistUrls.length >= 10}
@@ -760,7 +761,8 @@ function Lobby({
                   addPlaylistUrl();
                 }
               }}
-              placeholder="Название в игре, например Дорога"
+              placeholder="Название"
+              title="Короткое название источника, которое будет показано игрокам в игре"
               maxLength={48}
             />
             <button className="secondary icon-text" type="button" disabled={!isHost || isBusy || !playlistDraft.trim()} onClick={addPlaylistUrl}>
@@ -1422,8 +1424,14 @@ function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, se
 
   useEffect(() => {
     serverOffsetRef.current = serverTime - Date.now();
-    const interval = window.setInterval(() => setNow(Date.now()), 50);
-    return () => window.clearInterval(interval);
+    let frameId = 0;
+    const tick = () => {
+      setNow(Date.now());
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
   }, [question.id, serverTime]);
 
   const adjustedNow = now + serverOffsetRef.current;

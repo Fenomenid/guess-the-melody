@@ -590,7 +590,7 @@ function buildRevealAchievements(room: Room): Achievement[] {
     achievements.push({
       id: `reveal-fast-${round}-${fastest.id}`,
       icon: '⚡',
-      title: 'Быстрее Shazam',
+      title: 'Узнал с пол-ноты',
       description: `${fastest.name}: ${formatSeconds(fastest.lastAnswer.responseMs)} сек до правильного ответа.`,
       recipient: fastest.name,
       tone: 'good'

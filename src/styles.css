@@ -8,6 +8,12 @@
   text-rendering: optimizeLegibility;
 }
 
+@property --progress {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 360deg;
+}
+
 :root[data-theme="dark"] {
   color: #f4f8ff;
   background: #000000;
@@ -788,7 +794,7 @@ select:focus {
   box-shadow:
     inset 0 0 0 10px rgba(255, 255, 255, 0.38),
     0 18px 36px rgba(47, 80, 96, 0.12);
-  transition: background 70ms linear;
+  transition: --progress 120ms linear;
 }
 
 .countdown-ring strong {
