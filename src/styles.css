@@ -719,21 +719,38 @@ select:focus {
 }
 
 .setting-toggle {
+  position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 10px;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-3);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.setting-toggle.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.setting-toggle:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .setting-toggle input {
-  width: 18px;
-  min-height: 18px;
-  margin-top: 3px;
-  accent-color: var(--accent);
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .setting-toggle span {

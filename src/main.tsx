@@ -1008,7 +1008,7 @@ function Lobby({
             />
           </label>
         )}
-        <label className="setting-toggle wide-field">
+        <label className={['setting-toggle wide-field', room.settings.allowAnswerChange ? 'active' : ''].filter(Boolean).join(' ')}>
           <input
             type="checkbox"
             disabled={!isHost || isBusy}
@@ -1020,7 +1020,7 @@ function Lobby({
             <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
           </span>
         </label>
-        <label className="setting-toggle wide-field">
+        <label className={['setting-toggle wide-field', room.settings.achievementsEnabled ? 'active' : ''].filter(Boolean).join(' ')}>
           <input
             type="checkbox"
             disabled={!isHost || isBusy}
