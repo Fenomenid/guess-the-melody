@@ -39,7 +39,19 @@ type Player = {
   correctAnswers: number;
   connected: boolean;
   isHost: boolean;
-  lastAnswer?: { hasAnswered: true } | { optionId: string; isCorrect: boolean; responseMs: number; points: number; answerChanges: number };
+  lastAnswer?: { hasAnswered: true; responseMs: number; answerChanges: number } | { optionId: string; isCorrect: boolean; responseMs: number; points: number; answerChanges: number };
+};
+
+type Achievement = {
+  id: string;
+  icon: string;
+  title: string;
+  description: string;
+  tone: 'safe' | 'good' | 'bad' | 'chaos';
+};
+
+type MatchMoment = Achievement & {
+  round: number;
 };
 
 type PlaylistSource = {
@@ -90,6 +102,8 @@ type Room = {
     sourceName?: string;
     sourceUrl?: string;
   };
+  achievements: Achievement[];
+  matchMoments: MatchMoment[];
   round: number;
   serverTime: number;
 };
@@ -339,6 +353,16 @@ function App() {
     });
   }
 
+  function requestLeaveRoom() {
+    setConfirmDialog({
+      title: 'Покинуть комнату?',
+      message: 'Вы выйдете из комнаты и перестанете получать события этой игры. Вернуться можно будет по ссылке-приглашению.',
+      confirmLabel: 'Покинуть',
+      tone: 'danger',
+      onConfirm: leaveRoom
+    });
+  }
+
   async function copyInvite() {
     if (!room) return;
     await navigator.clipboard.writeText(`${location.origin}/room/${room.code}`);
@@ -432,7 +456,7 @@ function App() {
             <Copy size={18} />
             {copied ? 'Скопировано' : 'Пригласить'}
           </button>
-          <button className="secondary icon-text" onClick={leaveRoom}>
+          <button className="secondary icon-text" onClick={requestLeaveRoom}>
             <DoorOpen size={18} />
             Покинуть
           </button>
@@ -1042,6 +1066,8 @@ function QuestionStage({
         <span>{me?.lastAnswer ? 'Ответ принят' : 'Выберите название трека'}</span>
       </div>
 
+      <AchievementShelf achievements={room.achievements} />
+
       <div className="music-visual">
         <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
           <Timer size={26} />
@@ -1132,6 +1158,7 @@ function ResultStage({
           </div>
         </div>
       )}
+      <AchievementShelf achievements={room.achievements} title="Ачивки раунда" />
       <div className="result-list">
         {room.players.map((player, index) => (
           <div className="score-row" key={player.id}>
@@ -1198,7 +1225,7 @@ function FinalStage({
         <Trophy size={18} />
         <span>Победитель: {room.players[0]?.name ?? 'игрок'}</span>
       </div>
-      <div className="podium">
+      <div className="podium" data-count={podium.length}>
         {podium.map((player) => {
           const place = room.players.findIndex((candidate) => candidate.id === player.id) + 1;
           return (
@@ -1223,6 +1250,7 @@ function FinalStage({
           </div>
         ))}
       </div>
+      <MatchMoments moments={room.matchMoments} />
       <div className="actions">
         {isHost && (
           <button className="primary" onClick={() => emit('reset_game', { code: room.code, playerId }, undefined, 'Возвращаем в лобби')}>
@@ -1232,6 +1260,64 @@ function FinalStage({
         )}
       </div>
     </div>
+  );
+}
+
+function AchievementShelf({ achievements, title = 'Ачивки' }: { achievements: Achievement[]; title?: string }) {
+  if (achievements.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="achievement-shelf" aria-label={title}>
+      <div className="achievement-title">
+        <Trophy size={16} />
+        <span>{title}</span>
+      </div>
+      <div className="achievement-list">
+        {achievements.map((achievement) => (
+          <article className={`achievement-card ${achievement.tone}`} key={achievement.id}>
+            <span className="achievement-icon" aria-hidden="true">
+              {achievement.icon}
+            </span>
+            <div>
+              <strong>{achievement.title}</strong>
+              <small>{achievement.description}</small>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MatchMoments({ moments }: { moments: MatchMoment[] }) {
+  if (moments.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="match-moments" aria-label="Моменты матча">
+      <div className="achievement-title">
+        <Trophy size={16} />
+        <span>Моменты матча</span>
+      </div>
+      <div className="moment-list">
+        {moments.map((moment) => (
+          <article className={`achievement-card moment-card ${moment.tone}`} key={moment.id}>
+            <span className="achievement-icon" aria-hidden="true">
+              {moment.icon}
+            </span>
+            <div>
+              <strong>{moment.title}</strong>
+              <small>
+                Раунд {moment.round}: {moment.description}
+              </small>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -114,7 +114,9 @@ describe('GameEngine', () => {
     const hiddenAnswer = engine.getPublicRoom('ROOM42').players[0].lastAnswer;
     const revealedAnswer = engine.revealRound('ROOM42').players[0].lastAnswer;
 
-    expect(hiddenAnswer).toEqual({ hasAnswered: true });
+    expect(hiddenAnswer).toMatchObject({ hasAnswered: true, responseMs: 1000, answerChanges: 0 });
+    expect(hiddenAnswer).not.toHaveProperty('optionId');
+    expect(hiddenAnswer).not.toHaveProperty('isCorrect');
     expect(revealedAnswer).toMatchObject({ optionId: question.correctOptionId, isCorrect: true });
   });
 
@@ -454,5 +456,52 @@ describe('GameEngine', () => {
 
     expect(corrected).toMatchObject({ isCorrect: true, answerChanges: 1, points: 850 });
     expect(repeated).toMatchObject({ isCorrect: true, answerChanges: 1, points: 850, responseMs: 2000 });
+  });
+
+  it('caps answer change penalties', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { allowAnswerChange: true });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    const wrongOptions = question.options.filter((option) => option.id !== question.correctOptionId);
+
+    for (let index = 0; index < 6; index += 1) {
+      engine.submitAnswer('ROOM42', 'host', wrongOptions[index % wrongOptions.length].id, 2000 + index);
+    }
+    const corrected = engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 9000);
+
+    expect(corrected.points).toBeGreaterThanOrEqual(100);
+  });
+
+  it('publishes live and reveal achievements only when beta mode is enabled', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { achievementsEnabled: true, allowAnswerChange: true });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    const wrongOption = question.options.find((option) => option.id !== question.correctOptionId)!;
+
+    engine.submitAnswer('ROOM42', 'host', wrongOption.id, 2000);
+    engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 3000);
+
+    const liveRoom = engine.getPublicRoom('ROOM42');
+    const revealed = engine.revealRound('ROOM42');
+
+    expect(liveRoom.achievements.some((achievement) => achievement.title === 'Первый на кнопке')).toBe(true);
+    expect(liveRoom.players[0].lastAnswer).toMatchObject({ hasAnswered: true, answerChanges: 1 });
+    expect(revealed.achievements.some((achievement) => achievement.title === 'Переобулся удачно')).toBe(true);
+  });
+
+  it('publishes up to five final match moments', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { achievementsEnabled: true, rounds: 1 });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+
+    engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 2000);
+    const finalRoom = engine.revealRound('ROOM42');
+
+    expect(finalRoom.status).toBe('finished');
+    expect(finalRoom.matchMoments.length).toBeGreaterThan(0);
+    expect(finalRoom.matchMoments.length).toBeLessThanOrEqual(5);
   });
 });

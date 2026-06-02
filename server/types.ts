@@ -62,7 +62,19 @@ export type PlayerAnswerResult = {
   answerChanges: number;
 };
 
-export type PublicPlayerAnswer = PlayerAnswerResult | { hasAnswered: true };
+export type PublicPlayerAnswer = PlayerAnswerResult | { hasAnswered: true; responseMs: number; answerChanges: number };
+
+export type Achievement = {
+  id: string;
+  icon: string;
+  title: string;
+  description: string;
+  tone: 'safe' | 'good' | 'bad' | 'chaos';
+};
+
+export type MatchMoment = Achievement & {
+  round: number;
+};
 
 export type PlaylistSource = {
   url: string;
@@ -96,6 +108,8 @@ export type PublicRoom = {
   players: PublicPlayer[];
   currentQuestion?: Question;
   correctTrack?: Track;
+  achievements: Achievement[];
+  matchMoments: MatchMoment[];
   round: number;
   serverTime: number;
 };

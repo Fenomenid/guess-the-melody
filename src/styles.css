@@ -911,6 +911,87 @@ select:focus {
   text-decoration: underline;
 }
 
+.achievement-shelf,
+.match-moments {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 10px;
+}
+
+.achievement-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #5d5546;
+  font-weight: 900;
+}
+
+.achievement-list,
+.moment-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.achievement-card {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #c9bca9;
+  border-radius: 8px;
+  color: #2c2821;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.achievement-card.good {
+  border-color: #93c8a6;
+  background: #e2f1e6;
+}
+
+.achievement-card.bad {
+  border-color: #e0a3a3;
+  background: #f3e1df;
+}
+
+.achievement-card.chaos {
+  border-color: #cfba77;
+  background: #f1e8c9;
+}
+
+.achievement-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #477f75;
+  font-weight: 900;
+}
+
+.achievement-card strong,
+.achievement-card small {
+  display: block;
+}
+
+.achievement-card small {
+  margin-top: 3px;
+  color: #706754;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.match-moments {
+  margin-top: 4px;
+}
+
+.moment-card {
+  min-height: 84px;
+}
+
 .result-list {
   width: min(680px, 100%);
   display: grid;
@@ -937,6 +1018,16 @@ select:focus {
   align-items: end;
   gap: 12px;
   margin-top: 8px;
+}
+
+.podium[data-count="1"] {
+  grid-template-columns: minmax(220px, 280px);
+  justify-content: center;
+}
+
+.podium[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(220px, 280px));
+  justify-content: center;
 }
 
 .podium-place {
@@ -989,6 +1080,12 @@ select:focus {
   min-height: 185px;
   order: 3;
   background: linear-gradient(180deg, #f2dcc3, #b98252);
+}
+
+.podium[data-count="1"] .place-1,
+.podium[data-count="2"] .place-1,
+.podium[data-count="2"] .place-2 {
+  order: initial;
 }
 
 .final-list {
@@ -1195,6 +1292,32 @@ select:focus {
   color: #e7edf6;
   background: #070b10;
   border-color: #1c2633;
+}
+
+:root[data-theme="dark"] .achievement-title,
+:root[data-theme="dark"] .achievement-card small {
+  color: #9eb0c7;
+}
+
+:root[data-theme="dark"] .achievement-card {
+  color: #e7edf6;
+  background: #070b10;
+  border-color: #1c2633;
+}
+
+:root[data-theme="dark"] .achievement-card.good {
+  background: #092116;
+  border-color: #2f8b5b;
+}
+
+:root[data-theme="dark"] .achievement-card.bad {
+  background: #2b1116;
+  border-color: #8f2d40;
+}
+
+:root[data-theme="dark"] .achievement-card.chaos {
+  background: #2a220d;
+  border-color: #7b6321;
 }
 
 :root[data-theme="dark"] .player-row.self {

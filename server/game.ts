@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  Achievement,
+  MatchMoment,
   Player,
   PlayerAnswerResult,
   PlaylistSource,
@@ -13,6 +15,21 @@ import type {
   TrackOption
 } from './types';
 
+type RoundHistoryEntry = {
+  round: number;
+  trackTitle: string;
+  answers: RoundHistoryAnswer[];
+};
+
+type RoundHistoryAnswer = {
+  playerId: string;
+  playerName: string;
+  isCorrect: boolean;
+  responseMs: number;
+  points: number;
+  answerChanges: number;
+};
+
 type Room = {
   code: string;
   status: RoomStatus;
@@ -21,6 +38,7 @@ type Room = {
   currentQuestion?: QuestionInternal;
   usedTrackIds: Set<string>;
   usedOptionTitles: Set<string>;
+  roundHistory: RoundHistoryEntry[];
   round: number;
 };
 
@@ -32,6 +50,7 @@ export type SerializedRoom = {
   currentQuestion?: QuestionInternal;
   usedTrackIds: string[];
   usedOptionTitles?: string[];
+  roundHistory?: RoundHistoryEntry[];
   round: number;
 };
 
@@ -54,6 +73,8 @@ const DEFAULT_SETTINGS: RoomSettings = {
   achievementsEnabled: false
 };
 const ANSWER_CHANGE_PENALTY = 50;
+const MIN_CORRECT_POINTS = 100;
+const MAX_WRONG_PENALTY = 150;
 
 export class GameEngine {
   private readonly rooms = new Map<string, Room>();
@@ -74,6 +95,7 @@ export class GameEngine {
       players: new Map([[player.id, player]]),
       usedTrackIds: new Set(),
       usedOptionTitles: new Set(),
+      roundHistory: [],
       round: 0
     };
 
@@ -244,7 +266,9 @@ export class GameEngine {
     const isCorrect = optionId === room.currentQuestion.correctOptionId;
     const answerChanges = player.lastAnswer ? player.lastAnswer.answerChanges + 1 : 0;
     const penalty = answerChanges * ANSWER_CHANGE_PENALTY;
-    const points = (isCorrect ? calculatePoints(responseMs, room.currentQuestion.durationMs) : 0) - penalty;
+    const points = isCorrect
+      ? Math.max(MIN_CORRECT_POINTS, calculatePoints(responseMs, room.currentQuestion.durationMs) - penalty)
+      : -Math.min(MAX_WRONG_PENALTY, penalty);
 
     player.lastAnswer = { optionId, isCorrect, responseMs, points, answerChanges };
     return player.lastAnswer;
@@ -262,6 +286,7 @@ export class GameEngine {
     room.status = 'lobby';
     room.round = 0;
     room.currentQuestion = undefined;
+    room.roundHistory = [];
     for (const player of room.players.values()) {
       player.score = 0;
       player.correctAnswers = 0;
@@ -343,6 +368,7 @@ export class GameEngine {
       currentQuestion: room.currentQuestion,
       usedTrackIds: [...room.usedTrackIds],
       usedOptionTitles: [...room.usedOptionTitles],
+      roundHistory: room.roundHistory,
       round: room.round
     }));
   }
@@ -364,6 +390,7 @@ export class GameEngine {
         currentQuestion: restoredStatus === 'finished' ? snapshot.currentQuestion : undefined,
         usedTrackIds: new Set(snapshot.usedTrackIds),
         usedOptionTitles: new Set(snapshot.usedOptionTitles ?? []),
+        roundHistory: snapshot.roundHistory ?? [],
         round: restoredStatus === 'finished' ? snapshot.round : 0
       };
       this.ensureHost(room);
@@ -390,6 +417,9 @@ export class GameEngine {
       if (player.lastAnswer?.isCorrect) {
         player.correctAnswers += 1;
       }
+    }
+    if (room.settings.achievementsEnabled) {
+      room.roundHistory.push(createRoundHistoryEntry(room, question));
     }
     question.scoresApplied = true;
   }
@@ -427,6 +457,8 @@ function toPublicRoom(room: Room, revealCorrectTrack = false): PublicRoom {
     players: sortPublicPlayers([...room.players.values()].map((player) => toPublicPlayer(player, revealCorrectTrack)), room.status, revealCorrectTrack),
     currentQuestion: question,
     correctTrack: revealCorrectTrack ? room.currentQuestion?.correctTrack : undefined,
+    achievements: room.settings.achievementsEnabled ? buildAchievements(room, revealCorrectTrack) : [],
+    matchMoments: room.settings.achievementsEnabled && room.status === 'finished' ? buildMatchMoments(room.roundHistory) : [],
     round: room.round,
     serverTime: Date.now()
   };
@@ -439,7 +471,7 @@ function toPublicPlayer(player: Player, revealAnswer: boolean): PublicPlayer {
 
   return {
     ...player,
-    lastAnswer: { hasAnswered: true }
+    lastAnswer: { hasAnswered: true, responseMs: player.lastAnswer.responseMs, answerChanges: player.lastAnswer.answerChanges }
   };
 }
 
@@ -455,6 +487,259 @@ function sortPublicPlayers(players: PublicPlayer[], status: RoomStatus, revealRo
 
 function publicAnswerPoints(player: PublicPlayer): number {
   return player.lastAnswer && 'points' in player.lastAnswer ? player.lastAnswer.points : 0;
+}
+
+function buildAchievements(room: Room, revealRound: boolean): Achievement[] {
+  if (!room.currentQuestion) {
+    return [];
+  }
+  return revealRound ? buildRevealAchievements(room) : buildLiveAchievements(room);
+}
+
+function buildLiveAchievements(room: Room): Achievement[] {
+  const question = room.currentQuestion;
+  if (!question || room.status !== 'question') {
+    return [];
+  }
+
+  const answers = [...room.players.values()]
+    .filter((player): player is Player & { lastAnswer: PlayerAnswerResult } => Boolean(player.lastAnswer))
+    .sort((a, b) => a.lastAnswer.responseMs - b.lastAnswer.responseMs);
+  const achievements: Achievement[] = [];
+  const first = answers[0];
+
+  if (first) {
+    achievements.push({
+      id: `live-first-${question.id}-${first.id}`,
+      icon: '⚡',
+      title: 'Первый на кнопке',
+      description: `${first.name} уже ткнул вариант. Уверенность или паника?`,
+      tone: 'safe'
+    });
+  }
+
+  const changer = answers.find((player) => player.lastAnswer.answerChanges > 0);
+  if (changer) {
+    achievements.push({
+      id: `live-change-${question.id}-${changer.id}-${changer.lastAnswer.answerChanges}`,
+      icon: '↔',
+      title: 'Переобулся в воздухе',
+      description: `${changer.name} сменил ответ. Минус очки, плюс драма.`,
+      tone: 'chaos'
+    });
+  }
+
+  const late = answers.find((player) => player.lastAnswer.responseMs >= question.durationMs - 2_000);
+  if (late) {
+    achievements.push({
+      id: `live-late-${question.id}-${late.id}`,
+      icon: '⏱',
+      title: 'На последней секунде',
+      description: `${late.name} нажал так поздно, что таймер вспотел.`,
+      tone: 'safe'
+    });
+  }
+
+  if (answers.length === room.players.size && room.players.size > 1) {
+    achievements.push({
+      id: `live-all-${question.id}`,
+      icon: '✓',
+      title: 'Все в деле',
+      description: 'Все ответили. Теперь ждём, кто зря был таким уверенным.',
+      tone: 'safe'
+    });
+  }
+
+  return achievements.slice(0, 3);
+}
+
+function buildRevealAchievements(room: Room): Achievement[] {
+  const answers = [...room.players.values()].filter((player): player is Player & { lastAnswer: PlayerAnswerResult } => Boolean(player.lastAnswer));
+  const correct = answers.filter((player) => player.lastAnswer.isCorrect);
+  const achievements: Achievement[] = [];
+  const round = room.currentQuestion?.round ?? room.round;
+
+  if (correct.length === 0) {
+    achievements.push({
+      id: `reveal-empty-${round}`,
+      icon: '💀',
+      title: 'Коллективный промах',
+      description: 'Никто не угадал. Трек победил людей.',
+      tone: 'bad'
+    });
+  }
+
+  if (correct.length === 1 && answers.length > 1) {
+    achievements.push({
+      id: `reveal-only-${round}-${correct[0].id}`,
+      icon: '🎯',
+      title: 'Один в поле угадал',
+      description: `${correct[0].name} вытащил раунд, пока остальные слушали другой плейлист.`,
+      tone: 'good'
+    });
+  }
+
+  const fastest = correct.sort((a, b) => a.lastAnswer.responseMs - b.lastAnswer.responseMs)[0];
+  if (fastest) {
+    achievements.push({
+      id: `reveal-fast-${round}-${fastest.id}`,
+      icon: '⚡',
+      title: 'Быстрее Shazam',
+      description: `${fastest.name}: ${formatSeconds(fastest.lastAnswer.responseMs)} сек до правильного ответа.`,
+      tone: 'good'
+    });
+  }
+
+  const changedCorrect = correct.find((player) => player.lastAnswer.answerChanges > 0);
+  if (changedCorrect) {
+    achievements.push({
+      id: `reveal-change-good-${round}-${changedCorrect.id}`,
+      icon: '🧠',
+      title: 'Переобулся удачно',
+      description: `${changedCorrect.name} сменил ответ и всё-таки попал. Мозг загрузился не сразу.`,
+      tone: 'good'
+    });
+  }
+
+  const biggestPenalty = answers
+    .filter((player) => player.lastAnswer.answerChanges > 0)
+    .sort((a, b) => b.lastAnswer.answerChanges - a.lastAnswer.answerChanges)[0];
+  if (biggestPenalty) {
+    achievements.push({
+      id: `reveal-change-chaos-${round}-${biggestPenalty.id}`,
+      icon: '🔁',
+      title: 'Руки быстрее мозга',
+      description: `${biggestPenalty.name} сменил ответ ${biggestPenalty.lastAnswer.answerChanges} раз. Интерфейс выдержал.`,
+      tone: biggestPenalty.lastAnswer.points < 0 ? 'bad' : 'chaos'
+    });
+  }
+
+  return uniqueAchievements(achievements).slice(0, 4);
+}
+
+function createRoundHistoryEntry(room: Room, question: QuestionInternal): RoundHistoryEntry {
+  return {
+    round: question.round,
+    trackTitle: question.correctTrack.title,
+    answers: [...room.players.values()]
+      .filter((player): player is Player & { lastAnswer: PlayerAnswerResult } => Boolean(player.lastAnswer))
+      .map((player) => ({
+        playerId: player.id,
+        playerName: player.name,
+        isCorrect: player.lastAnswer.isCorrect,
+        responseMs: player.lastAnswer.responseMs,
+        points: player.lastAnswer.points,
+        answerChanges: player.lastAnswer.answerChanges
+      }))
+  };
+}
+
+function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
+  const candidates: MatchMoment[] = [];
+  const allAnswers = history.flatMap((round) => round.answers.map((answer) => ({ ...answer, round: round.round, trackTitle: round.trackTitle })));
+  const correct = allAnswers.filter((answer) => answer.isCorrect);
+  const fastest = [...correct].sort((a, b) => a.responseMs - b.responseMs)[0];
+  const best = [...allAnswers].sort((a, b) => b.points - a.points)[0];
+  const penalty = [...allAnswers].filter((answer) => answer.answerChanges > 0).sort((a, b) => a.points - b.points)[0];
+  const mostChanges = [...allAnswers].filter((answer) => answer.answerChanges > 0).sort((a, b) => b.answerChanges - a.answerChanges)[0];
+  const onlyCorrectRound = history.find((round) => round.answers.filter((answer) => answer.isCorrect).length === 1 && round.answers.length > 1);
+  const noCorrectRound = history.find((round) => round.answers.length > 0 && round.answers.every((answer) => !answer.isCorrect));
+
+  if (fastest) {
+    candidates.push({
+      id: `moment-fast-${fastest.round}-${fastest.playerId}`,
+      round: fastest.round,
+      icon: '⚡',
+      title: 'Самый быстрый палец',
+      description: `${fastest.playerName} угадал "${fastest.trackTitle}" за ${formatSeconds(fastest.responseMs)} сек.`,
+      tone: 'good'
+    });
+  }
+  if (best) {
+    candidates.push({
+      id: `moment-best-${best.round}-${best.playerId}`,
+      round: best.round,
+      icon: '🏆',
+      title: 'Лучший удар раунда',
+      description: `${best.playerName} забрал ${formatSignedScore(best.points)} на "${best.trackTitle}".`,
+      tone: best.points > 0 ? 'good' : 'bad'
+    });
+  }
+  if (onlyCorrectRound) {
+    const answer = onlyCorrectRound.answers.find((item) => item.isCorrect)!;
+    candidates.push({
+      id: `moment-only-${onlyCorrectRound.round}-${answer.playerId}`,
+      round: onlyCorrectRound.round,
+      icon: '🎯',
+      title: 'Один против всех',
+      description: `${answer.playerName} единственный понял, что играет "${onlyCorrectRound.trackTitle}".`,
+      tone: 'good'
+    });
+  }
+  if (penalty) {
+    candidates.push({
+      id: `moment-penalty-${penalty.round}-${penalty.playerId}`,
+      round: penalty.round,
+      icon: '🔁',
+      title: 'Перевыбор года',
+      description: `${penalty.playerName} дощёлкал до ${formatSignedScore(penalty.points)}. Зато не скучно.`,
+      tone: 'bad'
+    });
+  }
+  if (mostChanges) {
+    candidates.push({
+      id: `moment-change-${mostChanges.round}-${mostChanges.playerId}`,
+      round: mostChanges.round,
+      icon: '🌀',
+      title: 'Крутил рулетку',
+      description: `${mostChanges.playerName} сменил ответ ${mostChanges.answerChanges} раз за один раунд.`,
+      tone: 'chaos'
+    });
+  }
+  if (noCorrectRound) {
+    candidates.push({
+      id: `moment-empty-${noCorrectRound.round}`,
+      round: noCorrectRound.round,
+      icon: '💀',
+      title: 'Раунд без свидетелей',
+      description: `"${noCorrectRound.trackTitle}" не угадал никто. Даже трек удивился.`,
+      tone: 'bad'
+    });
+  }
+
+  return uniqueMoments(candidates).slice(0, 5);
+}
+
+function uniqueAchievements(achievements: Achievement[]): Achievement[] {
+  const seen = new Set<string>();
+  return achievements.filter((achievement) => {
+    const key = achievement.title;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function uniqueMoments(moments: MatchMoment[]): MatchMoment[] {
+  const seen = new Set<string>();
+  return moments.filter((moment) => {
+    const key = moment.title;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatSeconds(ms: number): string {
+  return (ms / 1000).toFixed(ms < 10_000 ? 1 : 0);
+}
+
+function formatSignedScore(points: number): string {
+  return points > 0 ? `+${points}` : String(points);
 }
 
 function isGameFinished(room: Room): boolean {
