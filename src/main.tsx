@@ -1020,18 +1020,6 @@ function Lobby({
             <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
           </span>
         </label>
-        <label className={['setting-toggle wide-field', room.settings.achievementsEnabled ? 'active' : ''].filter(Boolean).join(' ')}>
-          <input
-            type="checkbox"
-            disabled={!isHost || isBusy}
-            checked={room.settings.achievementsEnabled}
-            onChange={(event) => onSettingsChange({ achievementsEnabled: event.target.checked })}
-          />
-          <span>
-            <strong>Ачивки (Beta)</strong>
-            <small>Включает экспериментальные события раунда и моменты матча.</small>
-          </span>
-        </label>
         <div className="notice">
           <Radio size={18} />
           <span>

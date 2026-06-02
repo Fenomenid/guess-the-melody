@@ -78,7 +78,7 @@ const DEFAULT_SETTINGS: RoomSettings = {
   targetScore: 10_000,
   questionDurationMs: 10_000,
   allowAnswerChange: false,
-  achievementsEnabled: false
+  achievementsEnabled: true
 };
 const ANSWER_CHANGE_PENALTY = 50;
 const MIN_CORRECT_POINTS = 100;
@@ -162,7 +162,7 @@ export class GameEngine {
       targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 200_000),
       questionDurationMs: clampInteger(settings.questionDurationMs ?? room.settings.questionDurationMs, 5_000, maxQuestionDurationMs(difficulty)),
       allowAnswerChange: typeof settings.allowAnswerChange === 'boolean' ? settings.allowAnswerChange : room.settings.allowAnswerChange,
-      achievementsEnabled: typeof settings.achievementsEnabled === 'boolean' ? settings.achievementsEnabled : room.settings.achievementsEnabled
+      achievementsEnabled: true
     };
 
     return toPublicRoom(room);
@@ -869,7 +869,7 @@ function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
       maxQuestionDurationMs(settings.difficulty === 'hard' ? 'hard' : DEFAULT_SETTINGS.difficulty)
     ),
     allowAnswerChange: settings.allowAnswerChange ?? DEFAULT_SETTINGS.allowAnswerChange,
-    achievementsEnabled: settings.achievementsEnabled ?? DEFAULT_SETTINGS.achievementsEnabled
+    achievementsEnabled: true
   };
 }
 

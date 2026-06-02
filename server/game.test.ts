@@ -21,7 +21,7 @@ describe('GameEngine', () => {
     expect(room.settings.questionDurationMs).toBe(10_000);
     expect(room.settings.targetScore).toBe(10_000);
     expect(room.settings.answerMode).toBe('title');
-    expect(room.settings.achievementsEnabled).toBe(false);
+    expect(room.settings.achievementsEnabled).toBe(true);
   });
 
   it('starts a round with four answer options and no public correct answer', () => {
@@ -239,15 +239,6 @@ describe('GameEngine', () => {
 
     expect(hardRoom.settings.difficulty).toBe('hard');
     expect(easyRoom.settings.difficulty).toBe('easy');
-  });
-
-  it('can enable beta achievements in room settings', () => {
-    const engine = new GameEngine(() => 'ROOM42');
-    engine.createRoom({ playerId: 'host', playerName: 'Host' });
-
-    const room = engine.updateSettings('ROOM42', { achievementsEnabled: true });
-
-    expect(room.settings.achievementsEnabled).toBe(true);
   });
 
   it('limits easy mode answer time to fifteen seconds', () => {
@@ -512,10 +503,10 @@ describe('GameEngine', () => {
     expect(corrected.points).toBeGreaterThanOrEqual(100);
   });
 
-  it('publishes live and reveal achievements only when beta mode is enabled', () => {
+  it('publishes live and reveal achievements', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
-    engine.updateSettings('ROOM42', { achievementsEnabled: true, allowAnswerChange: true });
+    engine.updateSettings('ROOM42', { allowAnswerChange: true });
     const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
     const wrongOption = question.options.find((option) => option.id !== question.correctOptionId)!;
 
@@ -533,7 +524,7 @@ describe('GameEngine', () => {
   it('publishes up to five final match moments', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
-    engine.updateSettings('ROOM42', { achievementsEnabled: true, rounds: 1 });
+    engine.updateSettings('ROOM42', { rounds: 1 });
     const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
 
     engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 2000);
