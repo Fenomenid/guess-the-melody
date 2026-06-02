@@ -394,6 +394,7 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
           .map((item) => ({ url: item.url, name: typeof item.name === 'string' ? item.name : '' }))
       : undefined,
     difficulty: raw.difficulty === 'hard' || raw.difficulty === 'easy' ? raw.difficulty : undefined,
+    answerMode: raw.answerMode === 'artist' || raw.answerMode === 'mixed' || raw.answerMode === 'title' ? raw.answerMode : undefined,
     winCondition: raw.winCondition === 'score' || raw.winCondition === 'rounds' ? raw.winCondition : undefined,
     rounds: typeof raw.rounds === 'number' ? raw.rounds : undefined,
     targetScore: typeof raw.targetScore === 'number' ? raw.targetScore : undefined,

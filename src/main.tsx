@@ -80,6 +80,7 @@ type Room = {
     playlistUrls?: string[];
     playlistSources?: PlaylistSource[];
     difficulty: 'easy' | 'hard';
+    answerMode: 'title' | 'artist' | 'mixed';
     winCondition: 'rounds' | 'score';
     rounds: number;
     targetScore: number;
@@ -780,6 +781,38 @@ function Lobby({
           </div>
         </label>
         <label className="field wide-field">
+          <span>Варианты ответа</span>
+          <div className="difficulty-toggle" role="group" aria-label="Варианты ответа">
+            <button
+              type="button"
+              className={room.settings.answerMode === 'title' ? 'active' : ''}
+              disabled={!isHost || isBusy}
+              onClick={() => onSettingsChange({ answerMode: 'title' })}
+            >
+              <strong>Песни</strong>
+              <small>Только названия треков</small>
+            </button>
+            <button
+              type="button"
+              className={room.settings.answerMode === 'artist' ? 'active' : ''}
+              disabled={!isHost || isBusy}
+              onClick={() => onSettingsChange({ answerMode: 'artist' })}
+            >
+              <strong>Исполнители</strong>
+              <small>Только имена артистов</small>
+            </button>
+            <button
+              type="button"
+              className={room.settings.answerMode === 'mixed' ? 'active' : ''}
+              disabled={!isHost || isBusy}
+              onClick={() => onSettingsChange({ answerMode: 'mixed' })}
+            >
+              <strong>Смешанный</strong>
+              <small>Артист и трек вместе</small>
+            </button>
+          </div>
+        </label>
+        <label className="field wide-field">
           <span>Плейлисты</span>
           <div className="playlist-input-grid">
             <input
@@ -1057,6 +1090,16 @@ function getMaxAnswerSeconds(difficulty: Room['settings']['difficulty']): number
   return difficulty === 'easy' ? 15 : 30;
 }
 
+function answerModePrompt(answerMode: Room['settings']['answerMode']): string {
+  if (answerMode === 'artist') {
+    return 'Выберите исполнителя';
+  }
+  if (answerMode === 'mixed') {
+    return 'Выберите исполнителя и трек';
+  }
+  return 'Выберите название трека';
+}
+
 function PreparingStage() {
   return (
     <div className="stage preparing-stage">
@@ -1120,7 +1163,7 @@ function QuestionStage({
         <span>
           {room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}
         </span>
-        <span>{me?.lastAnswer ? 'Ответ принят' : 'Выберите название трека'}</span>
+        <span>{me?.lastAnswer ? 'Ответ принят' : answerModePrompt(room.settings.answerMode)}</span>
       </div>
 <div className="music-visual">
         <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
@@ -1198,7 +1241,6 @@ function ResultStage({
 
   return (
     <div className="stage result-stage">
-      <p className="eyebrow">Ответ</p>
       <h2>Раунд завершен</h2>
       {room.correctTrack && (
         <div className="solution">

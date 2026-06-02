@@ -65,6 +65,7 @@ const DEFAULT_SETTINGS: RoomSettings = {
   playlistUrls: [],
   playlistSources: [],
   difficulty: 'easy',
+  answerMode: 'title',
   winCondition: 'rounds',
   rounds: 5,
   targetScore: 10_000,
@@ -148,6 +149,7 @@ export class GameEngine {
       playlistUrls,
       playlistSources,
       difficulty,
+      answerMode: sanitizeAnswerMode(settings.answerMode, room.settings.answerMode),
       winCondition: settings.winCondition === 'score' ? 'score' : settings.winCondition === 'rounds' ? 'rounds' : room.settings.winCondition,
       rounds: clampInteger(settings.rounds ?? room.settings.rounds, 1, 100),
       targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 200_000),
@@ -194,14 +196,16 @@ export class GameEngine {
     const available = tracks.filter((track) => !room.usedTrackIds.has(track.id));
     const correctPool = available.length > 0 ? available : tracks;
     const correctTrack = chooseCorrectTrack(correctPool, tracks, room.usedTrackIds);
-    const freshDistractorPool = uniqueByTitle(optionTracks).filter(
-      (track) => track.id !== correctTrack.id && normalizeTitle(track.title) !== normalizeTitle(correctTrack.title)
+    const answerMode = room.settings.answerMode;
+    const correctOptionLabel = answerOptionLabel(correctTrack, answerMode);
+    const freshDistractorPool = uniqueByOptionLabel(optionTracks, answerMode).filter(
+      (track) => track.id !== correctTrack.id && normalizeTitle(answerOptionLabel(track, answerMode)) !== normalizeTitle(correctOptionLabel)
     );
     const distractorPool =
-      freshDistractorPool.filter((track) => !room.usedOptionTitles.has(normalizeTitle(track.title))).length >= 3
-        ? freshDistractorPool.filter((track) => !room.usedOptionTitles.has(normalizeTitle(track.title)))
+      freshDistractorPool.filter((track) => !room.usedOptionTitles.has(normalizeTitle(answerOptionLabel(track, answerMode)))).length >= 3
+        ? freshDistractorPool.filter((track) => !room.usedOptionTitles.has(normalizeTitle(answerOptionLabel(track, answerMode))))
         : freshDistractorPool;
-    const sameScriptDistractors = distractorPool.filter((track) => titleScriptBucket(track.title) === titleScriptBucket(correctTrack.title));
+    const sameScriptDistractors = distractorPool.filter((track) => titleScriptBucket(answerOptionLabel(track, answerMode)) === titleScriptBucket(correctOptionLabel));
     const distractors = shuffle(sameScriptDistractors.length >= 3 ? sameScriptDistractors : distractorPool).slice(0, 3);
     const selected = [correctTrack, ...distractors];
     if (selected.length < 4) {
@@ -210,7 +214,7 @@ export class GameEngine {
     const options = shuffle(
       selected.map<TrackOption>((track) => ({
         id: track.id,
-        title: track.title
+        title: answerOptionLabel(track, answerMode)
       }))
     );
 
@@ -222,7 +226,7 @@ export class GameEngine {
     room.status = 'question';
     room.usedTrackIds.add(correctTrack.id);
     for (const track of selected) {
-      room.usedOptionTitles.add(normalizeTitle(track.title));
+      room.usedOptionTitles.add(normalizeTitle(answerOptionLabel(track, answerMode)));
     }
     const durationMsFinal = durationMs ?? room.settings.questionDurationMs;
     room.currentQuestion = {
@@ -859,6 +863,7 @@ function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
     playlistSources,
     difficulty: settings.difficulty === 'hard' ? 'hard' : DEFAULT_SETTINGS.difficulty,
     winCondition: settings.winCondition === 'score' ? 'score' : 'rounds',
+    answerMode: sanitizeAnswerMode(settings.answerMode, DEFAULT_SETTINGS.answerMode),
     rounds: clampInteger(settings.rounds ?? DEFAULT_SETTINGS.rounds, 1, 100),
     targetScore: clampInteger(settings.targetScore ?? DEFAULT_SETTINGS.targetScore, 500, 200_000),
     questionDurationMs: clampInteger(
@@ -875,12 +880,12 @@ function maxQuestionDurationMs(difficulty: RoomSettings['difficulty']): number {
   return difficulty === 'easy' ? 15_000 : 30_000;
 }
 
-function uniqueByTitle<T extends TrackMetadata>(tracks: T[]): T[] {
+function uniqueByOptionLabel<T extends TrackMetadata>(tracks: T[], answerMode: RoomSettings['answerMode']): T[] {
   const seen = new Set<string>();
   const unique: T[] = [];
 
   for (const track of tracks) {
-    const key = normalizeTitle(track.title);
+    const key = normalizeTitle(answerOptionLabel(track, answerMode));
     if (!seen.has(key)) {
       seen.add(key);
       unique.push(track);
@@ -888,6 +893,20 @@ function uniqueByTitle<T extends TrackMetadata>(tracks: T[]): T[] {
   }
 
   return unique;
+}
+
+function answerOptionLabel(track: TrackMetadata, answerMode: RoomSettings['answerMode']): string {
+  if (answerMode === 'artist') {
+    return track.artist;
+  }
+  if (answerMode === 'mixed') {
+    return `${track.artist} — ${track.title}`;
+  }
+  return track.title;
+}
+
+function sanitizeAnswerMode(value: unknown, fallback: RoomSettings['answerMode']): RoomSettings['answerMode'] {
+  return value === 'artist' || value === 'mixed' || value === 'title' ? value : fallback;
 }
 
 function chooseCorrectTrack(candidates: Track[], allTracks: Track[], usedTrackIds: Set<string>): Track {

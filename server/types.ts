@@ -1,5 +1,7 @@
 export type RoomStatus = 'lobby' | 'preparing' | 'question' | 'round-result' | 'finished';
 
+export type AnswerMode = 'title' | 'artist' | 'mixed';
+
 export type Theme = {
   id: string;
   title: string;
@@ -94,6 +96,7 @@ export type RoomSettings = {
   playlistUrls?: string[];
   playlistSources?: PlaylistSource[];
   difficulty: 'easy' | 'hard';
+  answerMode: AnswerMode;
   winCondition: 'rounds' | 'score';
   rounds: number;
   targetScore: number;

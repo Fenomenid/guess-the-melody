@@ -20,6 +20,7 @@ describe('GameEngine', () => {
     expect(room.settings.themeIds).toEqual([]);
     expect(room.settings.questionDurationMs).toBe(10_000);
     expect(room.settings.targetScore).toBe(10_000);
+    expect(room.settings.answerMode).toBe('title');
     expect(room.settings.achievementsEnabled).toBe(false);
   });
 
@@ -54,6 +55,41 @@ describe('GameEngine', () => {
 
     expect(question.options).toHaveLength(4);
     expect(new Set(question.options.map((option) => option.title)).size).toBe(4);
+  });
+
+  it('can show artist names as answer options', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { answerMode: 'artist' });
+    const artistTracks: Track[] = [
+      { id: 'artist-1', title: 'Song one', artist: 'Artist one', audioUrl: 'https://example.test/1.mp3' },
+      { id: 'artist-2', title: 'Song two', artist: 'Artist two', audioUrl: 'https://example.test/2.mp3' },
+      { id: 'artist-3', title: 'Song three', artist: 'Artist three', audioUrl: 'https://example.test/3.mp3' },
+      { id: 'artist-4', title: 'Song four', artist: 'Artist four', audioUrl: 'https://example.test/4.mp3' }
+    ];
+
+    const question = engine.startNextRound('ROOM42', artistTracks, 10_000, 1000);
+
+    expect(question.options).toHaveLength(4);
+    expect(question.options.map((option) => option.title).sort()).toEqual(['Artist four', 'Artist one', 'Artist three', 'Artist two']);
+  });
+
+  it('can show artist and song together as mixed answer options', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { answerMode: 'mixed' });
+    const mixedTracks: Track[] = [
+      { id: 'mixed-1', title: 'Song one', artist: 'Artist one', audioUrl: 'https://example.test/1.mp3' },
+      { id: 'mixed-2', title: 'Song two', artist: 'Artist two', audioUrl: 'https://example.test/2.mp3' },
+      { id: 'mixed-3', title: 'Song three', artist: 'Artist three', audioUrl: 'https://example.test/3.mp3' },
+      { id: 'mixed-4', title: 'Song four', artist: 'Artist four', audioUrl: 'https://example.test/4.mp3' }
+    ];
+
+    const question = engine.startNextRound('ROOM42', mixedTracks, 10_000, 1000);
+
+    expect(question.options).toHaveLength(4);
+    expect(question.options.every((option) => option.title.includes(' — '))).toBe(true);
+    expect(question.options).toContainEqual({ id: question.correctTrack.id, title: `${question.correctTrack.artist} — ${question.correctTrack.title}` });
   });
 
   it('prefers answer options with the same title script as the correct track', () => {
