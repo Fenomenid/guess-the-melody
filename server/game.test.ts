@@ -425,7 +425,24 @@ describe('GameEngine', () => {
 
     expect(first.isCorrect).toBe(false);
     expect(second.isCorrect).toBe(true);
+    expect(second.answerChanges).toBe(1);
+    expect(second.points).toBe(850);
     expect(revealed.players[0].lastAnswer).toMatchObject({ optionId: question.correctOptionId });
     expect(revealed.players[0].score).toBe(second.points);
+  });
+
+  it('subtracts a small penalty for answer reselection', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { allowAnswerChange: true });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    const wrongOption = question.options.find((option) => option.id !== question.correctOptionId)!;
+
+    engine.submitAnswer('ROOM42', 'host', wrongOption.id, 2000);
+    const corrected = engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 3000);
+    const repeated = engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 4000);
+
+    expect(corrected).toMatchObject({ isCorrect: true, answerChanges: 1, points: 850 });
+    expect(repeated).toMatchObject({ isCorrect: true, answerChanges: 1, points: 850, responseMs: 2000 });
   });
 });

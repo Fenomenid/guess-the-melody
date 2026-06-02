@@ -59,6 +59,7 @@ export type PlayerAnswerResult = {
   isCorrect: boolean;
   responseMs: number;
   points: number;
+  answerChanges: number;
 };
 
 export type PublicPlayerAnswer = PlayerAnswerResult | { hasAnswered: true };

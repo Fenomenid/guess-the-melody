@@ -39,7 +39,7 @@ type Player = {
   correctAnswers: number;
   connected: boolean;
   isHost: boolean;
-  lastAnswer?: { hasAnswered: true } | { optionId: string; isCorrect: boolean; responseMs: number; points: number };
+  lastAnswer?: { hasAnswered: true } | { optionId: string; isCorrect: boolean; responseMs: number; points: number; answerChanges: number };
 };
 
 type PlaylistSource = {
@@ -101,7 +101,7 @@ type ConfirmDialogState = {
   onConfirm: () => void;
 };
 
-function hasRevealedAnswer(player: Player): player is Player & { lastAnswer: { optionId: string; isCorrect: boolean; responseMs: number; points: number } } {
+function hasRevealedAnswer(player: Player): player is Player & { lastAnswer: { optionId: string; isCorrect: boolean; responseMs: number; points: number; answerChanges: number } } {
   return Boolean(player.lastAnswer && 'optionId' in player.lastAnswer);
 }
 
@@ -545,14 +545,22 @@ function Lobby({
   const [playlistSearchResults, setPlaylistSearchResults] = useState<PlaylistSearchItem[]>([]);
   const [playlistSearchLoading, setPlaylistSearchLoading] = useState(false);
   const [playlistSearchError, setPlaylistSearchError] = useState('');
+  const activeDraftFieldRef = useRef<'rounds' | 'seconds' | 'targetScore' | null>(null);
 
   useEffect(() => {
-    setRoundsDraft(String(room.settings.rounds));
-    setTargetScoreDraft(String(room.settings.targetScore));
-    setSecondsDraft(String(room.settings.questionDurationMs / 1000));
+    if (activeDraftFieldRef.current !== 'rounds') {
+      setRoundsDraft(String(room.settings.rounds));
+    }
+    if (activeDraftFieldRef.current !== 'targetScore') {
+      setTargetScoreDraft(String(room.settings.targetScore));
+    }
+    if (activeDraftFieldRef.current !== 'seconds') {
+      setSecondsDraft(String(room.settings.questionDurationMs / 1000));
+    }
   }, [room.settings.rounds, room.settings.targetScore, room.settings.questionDurationMs]);
 
   function commitRounds() {
+    activeDraftFieldRef.current = null;
     const value = Number(roundsDraft);
     const rounds = Number.isFinite(value) ? Math.max(1, Math.min(100, Math.round(value))) : room.settings.rounds;
     setRoundsDraft(String(rounds));
@@ -562,6 +570,7 @@ function Lobby({
   }
 
   function commitSeconds() {
+    activeDraftFieldRef.current = null;
     const value = Number(secondsDraft);
     const maxSeconds = getMaxAnswerSeconds(room.settings.difficulty);
     const seconds = Number.isFinite(value) ? Math.max(5, Math.min(maxSeconds, Math.round(value))) : room.settings.questionDurationMs / 1000;
@@ -572,6 +581,7 @@ function Lobby({
   }
 
   function commitTargetScore() {
+    activeDraftFieldRef.current = null;
     const value = Number(targetScoreDraft);
     const targetScore = Number.isFinite(value) ? Math.max(500, Math.min(200_000, Math.round(value))) : room.settings.targetScore;
     setTargetScoreDraft(String(targetScore));
@@ -821,13 +831,18 @@ function Lobby({
           <label className="field">
             <span>Раунды</span>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               min={1}
               max={100}
               disabled={!isHost || isBusy}
               value={roundsDraft}
+              onFocus={() => {
+                activeDraftFieldRef.current = 'rounds';
+              }}
               onBlur={commitRounds}
-              onChange={(event) => setRoundsDraft(event.target.value)}
+              onChange={(event) => setRoundsDraft(toDigitsDraft(event.target.value))}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
                   event.currentTarget.blur();
@@ -836,16 +851,21 @@ function Lobby({
             />
           </label>
         )}
-        <label className="field">
+        <label className="field wide-field">
           <span>Секунд на ответ</span>
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             min={5}
             max={getMaxAnswerSeconds(room.settings.difficulty)}
             disabled={!isHost || isBusy}
             value={secondsDraft}
+            onFocus={() => {
+              activeDraftFieldRef.current = 'seconds';
+            }}
             onBlur={commitSeconds}
-            onChange={(event) => setSecondsDraft(event.target.value)}
+            onChange={(event) => setSecondsDraft(toDigitsDraft(event.target.value))}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.currentTarget.blur();
@@ -857,13 +877,18 @@ function Lobby({
           <label className="field">
             <span>Очки для победы</span>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               min={500}
               max={200000}
               disabled={!isHost || isBusy}
               value={targetScoreDraft}
+              onFocus={() => {
+                activeDraftFieldRef.current = 'targetScore';
+              }}
               onBlur={commitTargetScore}
-              onChange={(event) => setTargetScoreDraft(event.target.value)}
+              onChange={(event) => setTargetScoreDraft(toDigitsDraft(event.target.value))}
             />
           </label>
         )}
@@ -924,6 +949,14 @@ function getPlaylistSources(settings: Room['settings']): PlaylistSource[] {
 
 function defaultPlaylistSourceName(url: string, index: number): string {
   return /\/album\//i.test(url) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`;
+}
+
+function toDigitsDraft(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+function formatSignedPoints(points: number): string {
+  return points > 0 ? `+${points}` : String(points);
 }
 
 function getMaxAnswerSeconds(difficulty: Room['settings']['difficulty']): number {
@@ -1096,7 +1129,13 @@ function ResultStage({
                 {selectedOptionTitle(player)}
               </small>
             </strong>
-            {hasRevealedAnswer(player) && player.lastAnswer.points ? <b className="score-pop">+{player.lastAnswer.points}</b> : <small>0</small>}
+            {hasRevealedAnswer(player) && player.lastAnswer.points ? (
+              <b className={['score-pop', player.lastAnswer.points < 0 ? 'penalty' : ''].filter(Boolean).join(' ')}>
+                {formatSignedPoints(player.lastAnswer.points)}
+              </b>
+            ) : (
+              <small>0</small>
+            )}
           </div>
         ))}
       </div>
@@ -1166,7 +1205,7 @@ function FinalStage({
               {player.name}
               <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>{selectedOptionTitle(player)}</small>
             </strong>
-            <small>{hasRevealedAnswer(player) && player.lastAnswer.points ? `+${player.lastAnswer.points}` : '0'}</small>
+            <small>{hasRevealedAnswer(player) && player.lastAnswer.points ? formatSignedPoints(player.lastAnswer.points) : '0'}</small>
             <em>{player.score}</em>
           </div>
         ))}

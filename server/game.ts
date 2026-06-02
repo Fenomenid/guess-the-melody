@@ -52,6 +52,7 @@ const DEFAULT_SETTINGS: RoomSettings = {
   questionDurationMs: 10_000,
   allowAnswerChange: false
 };
+const ANSWER_CHANGE_PENALTY = 50;
 
 export class GameEngine {
   private readonly rooms = new Map<string, Room>();
@@ -233,12 +234,17 @@ export class GameEngine {
     if (player.lastAnswer && !room.settings.allowAnswerChange) {
       throw new Error('Player already answered');
     }
+    if (player.lastAnswer?.optionId === optionId) {
+      return player.lastAnswer;
+    }
 
     const responseMs = Math.max(0, now - room.currentQuestion.startedAt);
     const isCorrect = optionId === room.currentQuestion.correctOptionId;
-    const points = isCorrect ? calculatePoints(responseMs, room.currentQuestion.durationMs) : 0;
+    const answerChanges = player.lastAnswer ? player.lastAnswer.answerChanges + 1 : 0;
+    const penalty = answerChanges * ANSWER_CHANGE_PENALTY;
+    const points = (isCorrect ? calculatePoints(responseMs, room.currentQuestion.durationMs) : 0) - penalty;
 
-    player.lastAnswer = { optionId, isCorrect, responseMs, points };
+    player.lastAnswer = { optionId, isCorrect, responseMs, points, answerChanges };
     return player.lastAnswer;
   }
 

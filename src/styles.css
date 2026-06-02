@@ -1070,6 +1070,10 @@ select:focus {
   animation: score-pop 900ms ease both;
 }
 
+.score-pop.penalty {
+  color: #b84a4a;
+}
+
 .floating-volume {
   position: fixed;
   left: 24px;
