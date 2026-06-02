@@ -7,7 +7,6 @@ import {
   LoaderCircle,
   LogIn,
   Medal,
-  Moon,
   Music2,
   Play,
   Plus,
@@ -16,7 +15,6 @@ import {
   RotateCcw,
   Skull,
   Sparkles,
-  Sun,
   Target,
   Timer,
   Trophy,
@@ -160,7 +158,6 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [volume, setVolume] = useState(() => Number(localStorage.getItem('volume') ?? 0.8));
   const [volumeOpen, setVolumeOpen] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'));
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -176,9 +173,9 @@ function App() {
   );
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    document.documentElement.dataset.theme = 'dark';
+    localStorage.setItem('theme', 'dark');
+  }, []);
 
   useEffect(() => {
     roomRef.current = room;
@@ -465,10 +462,16 @@ function App() {
           </label>
 
           {roomCodeFromUrl ? (
-            <button className="primary" onClick={joinRoom} disabled={isBusy}>
-              <LogIn size={18} />
-              Войти в комнату {roomCodeFromUrl}
-            </button>
+            <div className="auth-actions">
+              <button className="primary" onClick={joinRoom} disabled={isBusy}>
+                <LogIn size={18} />
+                Войти в комнату {roomCodeFromUrl}
+              </button>
+              <button className="secondary" onClick={createRoom} disabled={isBusy}>
+                <Users size={18} />
+                Создать новую
+              </button>
+            </div>
           ) : (
             <button className="primary" onClick={createRoom} disabled={isBusy}>
               <Users size={18} />
@@ -483,11 +486,6 @@ function App() {
               Войти
             </button>
           </div>
-
-          <button className="secondary" onClick={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}>
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-            {theme === 'dark' ? 'Светлая тема' : 'Темная тема'}
-          </button>
 
           {isBusy && <LoadingStrip label={busyLabel || 'Подключаемся'} />}
           {error && <p className="error">{error}</p>}
@@ -509,10 +507,6 @@ function App() {
           )}
         </div>
         <div className="top-actions">
-          <button className="secondary icon-text" onClick={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}>
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-            {theme === 'dark' ? 'Светлая' : 'Темная'}
-          </button>
           <button className="secondary icon-text" onClick={copyInvite}>
             <Copy size={18} />
             {copied ? 'Скопировано' : 'Пригласить'}
@@ -1001,7 +995,7 @@ function Lobby({
           />
           <span>
             <strong>Ачивки (Beta)</strong>
-            <small>Включает экспериментальные события раунда и будущие моменты матча. Пока режим готовится отдельно от основной игры.</small>
+            <small>Включает экспериментальные события раунда и моменты матча.</small>
           </span>
         </label>
         <div className="notice">
