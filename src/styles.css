@@ -840,12 +840,16 @@ select:focus {
   position: absolute;
   right: 10px;
   bottom: 10px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  color: #477f75;
-  background: #ffffff;
-  font-size: 12px;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #4f8765;
+  font-size: 15px;
   font-weight: 900;
+  line-height: 1;
 }
 
 .locked-answer:not(.selected-answer) {
@@ -1150,7 +1154,7 @@ select:focus {
 :root[data-theme="dark"] .self-label strong,
 :root[data-theme="dark"] .self-mark,
 :root[data-theme="dark"] .player-name svg {
-  color: #5fc4ef;
+  color: #7dd8a6;
 }
 
 :root[data-theme="dark"] .player-row,
@@ -1210,9 +1214,9 @@ select:focus {
 }
 
 :root[data-theme="dark"] .difficulty-toggle button.active {
-  border-color: #5fc4ef;
-  background: #061d2b;
-  box-shadow: 0 0 0 3px rgba(95, 196, 239, 0.14);
+  border-color: #7dd8a6;
+  background: #092116;
+  box-shadow: 0 0 0 3px rgba(125, 216, 166, 0.14);
 }
 
 :root[data-theme="dark"] .difficulty-toggle small {
@@ -1269,13 +1273,13 @@ select:focus {
 
 :root[data-theme="dark"] .primary,
 :root[data-theme="dark"] .round-button {
-  background: #2f8eb7;
+  background: #2f8b5b;
 }
 
 :root[data-theme="dark"] .notice {
-  color: #d8eef8;
-  background: #06121a;
-  border-color: #21475e;
+  color: #dff5e7;
+  background: #06160f;
+  border-color: #24543a;
 }
 
 :root[data-theme="dark"] .notice.winner {
@@ -1308,28 +1312,28 @@ select:focus {
 
 :root[data-theme="dark"] .music-visual {
   background:
-    radial-gradient(circle at 18px 24px, rgba(95, 196, 239, 0.18), transparent 32px),
-    linear-gradient(135deg, #06121a, #020407 64%);
-  border-color: #21475e;
+    radial-gradient(circle at 18px 24px, rgba(125, 216, 166, 0.16), transparent 32px),
+    linear-gradient(135deg, #06160f, #020407 64%);
+  border-color: #24543a;
 }
 
 :root[data-theme="dark"] .countdown-ring {
-  color: #dff4ff;
+  color: #e7f7ec;
   background:
     radial-gradient(circle, #030507 0 59%, transparent 60%),
-    conic-gradient(#2f8eb7 var(--progress), #1c2633 0);
+    conic-gradient(#2f8b5b var(--progress), #1c2633 0);
 }
 
 :root[data-theme="dark"] .source-pill {
-  color: #dff4ff;
+  color: #e7f7ec;
   background: rgba(3, 5, 7, 0.84);
-  border-color: #21475e;
+  border-color: #24543a;
 }
 
 :root[data-theme="dark"] .selected-answer {
   color: #ffffff;
-  background: #2f8eb7;
-  border-color: #2f8eb7;
+  background: #2f8b5b;
+  border-color: #2f8b5b;
 }
 
 :root[data-theme="dark"] .kick-button {
@@ -1340,14 +1344,14 @@ select:focus {
 
 :root[data-theme="dark"] .volume-popover {
   color: #e7edf6;
-  background: #151f2d;
-  border-color: #2a3a50;
+  background: #05070a;
+  border-color: #1c2633;
 }
 
 :root[data-theme="dark"] .confirm-modal {
   color: #e7edf6;
-  background: #151f2d;
-  border-color: #2a3a50;
+  background: #05070a;
+  border-color: #1c2633;
 }
 
 @keyframes stage-in {

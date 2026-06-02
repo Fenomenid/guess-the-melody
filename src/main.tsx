@@ -193,6 +193,15 @@ function App() {
   }, [room?.currentQuestion?.id]);
 
   useEffect(() => {
+    if (!volumeOpen) {
+      return undefined;
+    }
+    const closeVolume = () => setVolumeOpen(false);
+    document.addEventListener('pointerdown', closeVolume);
+    return () => document.removeEventListener('pointerdown', closeVolume);
+  }, [volumeOpen]);
+
+  useEffect(() => {
     if (!room?.code) {
       return;
     }
@@ -284,6 +293,13 @@ function App() {
     );
   }
 
+  function goHome() {
+    setRoom(null);
+    setError('');
+    setVolumeOpen(false);
+    window.history.replaceState(null, '', '/');
+  }
+
   function resetGame() {
     if (!room) return;
     emit('reset_game', { code: room.code, playerId }, undefined, 'Возвращаем в лобби');
@@ -296,16 +312,6 @@ function App() {
       confirmLabel: 'Кикнуть',
       tone: 'danger',
       onConfirm: () => kickPlayer(player.id)
-    });
-  }
-
-  function requestLeaveRoom() {
-    setConfirmDialog({
-      title: 'Покинуть комнату?',
-      message: 'Вы выйдете из комнаты. Вернуться можно будет по ссылке-приглашению.',
-      confirmLabel: 'Покинуть',
-      tone: 'danger',
-      onConfirm: leaveRoom
     });
   }
 
@@ -327,12 +333,12 @@ function App() {
   }
 
   const volumeButton = (
-    <div className="floating-volume">
+    <div className="floating-volume" onPointerDown={(event) => event.stopPropagation()}>
       <button className="round-button" type="button" aria-label="Громкость" onClick={() => setVolumeOpen((value) => !value)}>
         {volume === 0 ? <VolumeX size={22} /> : <Volume2 size={22} />}
       </button>
       {volumeOpen && (
-        <div className="volume-popover">
+        <div className="volume-popover" onPointerDown={(event) => event.stopPropagation()}>
           <span>Громкость</span>
           <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
           <strong>{Math.round(volume * 100)}%</strong>
@@ -412,7 +418,7 @@ function App() {
             <Copy size={18} />
             {copied ? 'Скопировано' : 'Пригласить'}
           </button>
-          <button className="secondary icon-text" onClick={requestLeaveRoom}>
+          <button className="secondary icon-text" onClick={goHome}>
             <DoorOpen size={18} />
             Покинуть
           </button>
@@ -1011,7 +1017,7 @@ function QuestionStage({
             disabled={Boolean(me?.lastAnswer && !room.settings.allowAnswerChange)}
           >
             {option.title}
-            {selectedOptionId === option.id && <span className="answer-picked">Ваш ответ</span>}
+            {selectedOptionId === option.id && <span className="answer-picked" aria-label="Выбрано">✓</span>}
           </button>
         ))}
       </div>
