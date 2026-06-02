@@ -971,9 +971,6 @@ function QuestionStage({
       </div>
 
       <div className="music-visual">
-        {question.coverUrl && (
-          <img className="track-cover active-cover" src={question.coverUrl} alt="" />
-        )}
         <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
           <Timer size={26} />
           <strong>{countdown.secondsLeft}</strong>

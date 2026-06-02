@@ -315,11 +315,6 @@ h2 {
   box-shadow: 0 12px 28px rgba(58, 48, 34, 0.12);
 }
 
-.active-cover {
-  max-width: 190px;
-  justify-self: center;
-}
-
 .result-cover {
   width: 58px;
   min-width: 58px;
