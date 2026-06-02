@@ -752,7 +752,6 @@ function Lobby({
     <div className="stage lobby-stage">
       <p className="eyebrow">Лобби</p>
       <h2>Ожидание игроков</h2>
-      <p className="muted">Ссылка уже ведет прямо в комнату. Хост выбирает тему, длительность и запускает первый раунд.</p>
 
       <div className="settings-stack">
         <details className="settings-section" open>
