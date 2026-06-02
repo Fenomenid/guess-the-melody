@@ -569,7 +569,6 @@ function App() {
               themes={themes}
               isHost={isHost}
               isBusy={isBusy}
-              busyLabel={busyLabel}
               onStart={() => emit('start_game', { code: room.code, playerId }, undefined, 'Готовим треки Яндекс Музыки')}
               onSettingsChange={updateSettings}
             />
@@ -604,7 +603,6 @@ function Lobby({
   themes,
   isHost,
   isBusy,
-  busyLabel,
   onStart,
   onSettingsChange
 }: {
@@ -612,7 +610,6 @@ function Lobby({
   themes: Theme[];
   isHost: boolean;
   isBusy: boolean;
-  busyLabel: string;
   onStart: () => void;
   onSettingsChange: (settings: Partial<Room['settings']>) => void;
 }) {
@@ -1046,8 +1043,6 @@ function Lobby({
           </div>
         </details>
       </div>
-
-      {isBusy && <LoadingStrip label={busyLabel || 'Готовим треки'} />}
 
       <div className="actions">
         {isHost ? (
