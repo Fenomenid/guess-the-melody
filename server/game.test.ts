@@ -24,6 +24,19 @@ describe('GameEngine', () => {
     expect(room.settings.achievementsEnabled).toBe(true);
   });
 
+  it('creates a display room and makes the first joined player host', () => {
+    const engine = new GameEngine(() => 'TVROOM');
+    const displayRoom = engine.createDisplayRoom();
+
+    expect(displayRoom.code).toBe('TVROOM');
+    expect(displayRoom.players).toHaveLength(0);
+
+    const joined = engine.joinRoom('TVROOM', { playerId: 'phone-1', playerName: 'Phone Host' });
+
+    expect(joined.players).toHaveLength(1);
+    expect(joined.players[0]).toMatchObject({ id: 'phone-1', isHost: true, connected: true });
+  });
+
   it('starts a round with four answer options and no public correct answer', () => {
     const engine = new GameEngine();
     const room = engine.createRoom({ playerId: 'p1', playerName: 'Host' });

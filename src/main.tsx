@@ -388,6 +388,17 @@ function App() {
     emit<Room>('create_room', { playerId, playerName: name }, handleRoomState, 'Создаем комнату');
   }
 
+  function createDisplayRoom() {
+    emit<Room>(
+      'create_display_room',
+      {},
+      (nextRoom) => {
+        window.location.assign(displayRoomUrl(nextRoom.code));
+      },
+      'Создаем экран ведущего'
+    );
+  }
+
   function joinRoom() {
     const name = playerName.trim();
     if (!name || !joinCode.trim()) {
@@ -554,10 +565,16 @@ function App() {
               </button>
             </div>
           ) : (
-            <button className="primary" onClick={createRoom} disabled={isBusy}>
-              <Users size={18} />
-              Создать комнату
-            </button>
+            <div className="auth-actions">
+              <button className="primary" onClick={createRoom} disabled={isBusy}>
+                <Users size={18} />
+                Создать комнату
+              </button>
+              <button className="secondary" onClick={createDisplayRoom} disabled={isBusy}>
+                <Radio size={18} />
+                Экран ведущего
+              </button>
+            </div>
           )}
 
           <div className="join-row">
@@ -577,13 +594,16 @@ function App() {
 
   if (appMode === 'display') {
     return (
-      <DisplayRoom
-        room={room}
-        volume={volume}
-        audioRef={audioRef}
-        answeredCount={answeredCount}
-        playerCount={playerCount}
-      />
+      <>
+        <DisplayRoom
+          room={room}
+          volume={volume}
+          audioRef={audioRef}
+          answeredCount={answeredCount}
+          playerCount={playerCount}
+        />
+        {volumeButton}
+      </>
     );
   }
 
@@ -592,7 +612,12 @@ function App() {
       <PlayerRoom
         room={room}
         me={me}
+        themes={themes}
+        isHost={isHost}
+        isBusy={isBusy}
         selectedOptionId={selectedOptionId}
+        onStart={() => emit('start_game', { code: room.code, playerId }, undefined, 'Готовим треки Яндекс Музыки')}
+        onSettingsChange={updateSettings}
         onSubmit={submitAnswer}
       />
     );
@@ -1178,10 +1203,11 @@ function DisplayRoom({
 }) {
   const playerUrl = playerRoomUrl(room.code);
   const noopEmit = () => undefined;
+  const showJoinQr = room.status === 'lobby' || room.status === 'preparing';
 
   return (
     <main className="page display-page">
-      <section className="display-hero">
+      <section className={['display-hero', !showJoinQr ? 'compact' : ''].filter(Boolean).join(' ')}>
         <div>
           <p className="eyebrow">Комната {room.code}</p>
           <h1 className="app-title">Угадай мелодию</h1>
@@ -1190,7 +1216,7 @@ function DisplayRoom({
             <span>Ответили: {answeredCount}/{playerCount}</span>
           </div>
         </div>
-        <QrJoinCard roomCode={room.code} url={playerUrl} />
+        {showJoinQr && <QrJoinCard roomCode={room.code} url={playerUrl} />}
       </section>
 
       <section className="game-panel display-game-panel">
@@ -1312,12 +1338,22 @@ function DisplayQuestionStage({
 function PlayerRoom({
   room,
   me,
+  themes,
+  isHost,
+  isBusy,
   selectedOptionId,
+  onStart,
+  onSettingsChange,
   onSubmit
 }: {
   room: Room;
   me?: Player;
+  themes: Theme[];
+  isHost: boolean;
+  isBusy: boolean;
   selectedOptionId: string;
+  onStart: () => void;
+  onSettingsChange: (settings: Partial<Room['settings']>) => void;
   onSubmit: (optionId: string) => void;
 }) {
   return (
@@ -1327,15 +1363,46 @@ function PlayerRoom({
           <span>Комната {room.code}</span>
           <strong>{me?.name ?? 'Игрок'}</strong>
         </div>
-        {room.status === 'lobby' && <PlayerStatus title="Ждем старт" text="Ведущий скоро начнет раунд." />}
+        {room.status === 'lobby' && (
+          isHost ? (
+            <div className="player-host-lobby">
+              <PlayerStatus title="Вы ведущий" text="Настройте игру и запускайте раунд. Музыка будет играть на общем экране." />
+              <Lobby room={room} themes={themes} isHost={isHost} isBusy={isBusy} onStart={onStart} onSettingsChange={onSettingsChange} />
+            </div>
+          ) : (
+            <PlayerStatus title="Ждем старт" text="Ведущий скоро начнет раунд." />
+          )
+        )}
         {room.status === 'preparing' && <PlayerStatus title="Готовим трек" text="Сейчас появятся варианты ответа." />}
         {room.status === 'question' && room.currentQuestion && (
           <PlayerQuestionStage room={room} me={me} selectedOptionId={selectedOptionId} onSubmit={onSubmit} />
         )}
-        {room.status === 'round-result' && <PlayerStatus title="Раунд завершен" text={me?.lastAnswer ? 'Ответ принят. Ждем следующий раунд.' : 'Вы не ответили в этом раунде.'} />}
+        {room.status === 'round-result' && <PlayerRoundResult room={room} me={me} />}
         {room.status === 'finished' && <PlayerStatus title="Игра окончена" text={`Победитель: ${room.players[0]?.name ?? 'игрок'}.`} />}
       </section>
     </main>
+  );
+}
+
+function PlayerRoundResult({ room, me }: { room: Room; me?: Player }) {
+  const optionId = me && hasRevealedAnswer(me) ? me.lastAnswer.optionId : undefined;
+  const selectedTitle = room.currentQuestion?.options.find((option) => option.id === optionId)?.title;
+
+  return (
+    <div className="player-round-result">
+      <PlayerStatus title="Раунд завершен" text={me?.lastAnswer ? 'Ответ принят. Ждем следующий раунд.' : 'Вы не ответили в этом раунде.'} />
+      {room.correctTrack && (
+        <div className="solution player-solution">
+          {room.correctTrack.coverUrl ? <img className="track-cover result-cover" src={room.correctTrack.coverUrl} alt="" /> : <Music2 size={24} />}
+          <div>
+            <strong>{room.correctTrack.title}</strong>
+            <span>{room.correctTrack.artist}</span>
+            {selectedTitle && <small>Ваш ответ: {selectedTitle}</small>}
+          </div>
+        </div>
+      )}
+      <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact />
+    </div>
   );
 }
 

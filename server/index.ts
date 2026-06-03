@@ -104,6 +104,18 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('create_display_room', async (_payload, callback) => {
+    try {
+      const room = engine.createDisplayRoom();
+      socket.join(room.code);
+      await persistRooms();
+      callback?.({ data: room });
+      io.to(room.code).emit('room_state', room);
+    } catch (error) {
+      callback?.({ error: toClientError(error) });
+    }
+  });
+
   socket.on('join_room', async ({ code, playerId, playerName }: { code: string; playerId: string; playerName: string }, callback) => {
     try {
       const room = engine.joinRoom(code.toUpperCase(), { playerId, playerName });

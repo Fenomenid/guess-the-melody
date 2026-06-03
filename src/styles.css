@@ -207,6 +207,10 @@ h2 {
   margin-bottom: 18px;
 }
 
+.display-hero.compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .display-meta {
   display: flex;
   gap: 10px;
@@ -313,6 +317,25 @@ h2 {
   font-weight: 800;
 }
 
+.player-host-lobby {
+  display: grid;
+  gap: 16px;
+}
+
+.player-host-lobby .player-status-card {
+  min-height: 0;
+  align-content: start;
+  text-align: left;
+}
+
+.player-host-lobby .settings-stack {
+  gap: 12px;
+}
+
+.player-host-lobby .settings-section {
+  padding: 12px;
+}
+
 .player-question-stage {
   display: grid;
   gap: 10px;
@@ -329,6 +352,32 @@ h2 {
 
 .player-answers .answer-button {
   min-height: 64px;
+}
+
+.player-round-result {
+  display: grid;
+  gap: 14px;
+}
+
+.player-round-result .player-status-card {
+  min-height: 0;
+  align-content: start;
+  text-align: left;
+}
+
+.player-solution {
+  width: 100%;
+  align-items: center;
+  padding: 12px;
+}
+
+.player-solution .result-cover {
+  width: 72px;
+  min-width: 72px;
+}
+
+.player-solution strong {
+  font-size: clamp(20px, 7vw, 30px);
 }
 
 .brand {

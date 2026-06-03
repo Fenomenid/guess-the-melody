@@ -111,6 +111,27 @@ export class GameEngine {
     return toPublicRoom(room);
   }
 
+  createDisplayRoom(): PublicRoom {
+    let code = this.codeGenerator();
+    while (this.rooms.has(code)) {
+      code = this.codeGenerator();
+    }
+
+    const room: Room = {
+      code,
+      status: 'lobby',
+      settings: { ...DEFAULT_SETTINGS },
+      players: new Map(),
+      usedTrackIds: new Set(),
+      usedOptionTitles: new Set(),
+      roundHistory: [],
+      round: 0
+    };
+
+    this.rooms.set(code, room);
+    return toPublicRoom(room);
+  }
+
   joinRoom(code: string, input: PlayerInput): PublicRoom {
     const room = this.requireRoom(code);
     const existing = room.players.get(input.playerId);
@@ -118,8 +139,11 @@ export class GameEngine {
     if (existing) {
       existing.connected = true;
       existing.name = sanitizeName(input.playerName);
+      if (![...room.players.values()].some((player) => player.isHost)) {
+        existing.isHost = true;
+      }
     } else {
-      room.players.set(input.playerId, createPlayer(input, false));
+      room.players.set(input.playerId, createPlayer(input, ![...room.players.values()].some((player) => player.isHost)));
     }
 
     return toPublicRoom(room);
