@@ -173,6 +173,7 @@ function App() {
     [room?.players]
   );
   const isQuestionStage = room?.status === 'question' && Boolean(room.currentQuestion);
+  const isResultStage = room?.status === 'round-result' || room?.status === 'finished';
   const answeredCount = room?.players.filter((player) => Boolean(player.lastAnswer)).length ?? 0;
   const playerCount = room?.players.length ?? 0;
 
@@ -503,7 +504,7 @@ function App() {
   }
 
   return (
-    <main className={['page', isQuestionStage ? 'question-page' : ''].filter(Boolean).join(' ')}>
+    <main className={['page', isQuestionStage ? 'question-page' : '', isResultStage ? 'result-page' : ''].filter(Boolean).join(' ')}>
       <RoomHeader
         room={room}
         me={me}
@@ -518,16 +519,18 @@ function App() {
       {error && <p className="error">{error}</p>}
 
       <div className={['layout', isQuestionStage ? 'question-layout' : ''].filter(Boolean).join(' ')}>
-        <PlayersPanel
-          room={room}
-          players={sortedPlayers}
-          playerId={playerId}
-          isHost={isHost}
-          isQuestionStage={isQuestionStage}
-          answeredCount={answeredCount}
-          playerCount={playerCount}
-          onKickPlayer={requestKickPlayer}
-        />
+        {!isQuestionStage && (
+          <PlayersPanel
+            room={room}
+            players={sortedPlayers}
+            playerId={playerId}
+            isHost={isHost}
+            isQuestionStage={isQuestionStage}
+            answeredCount={answeredCount}
+            playerCount={playerCount}
+            onKickPlayer={requestKickPlayer}
+          />
+        )}
 
         <section className="game-panel">
           {room.status === 'lobby' && (
@@ -1038,16 +1041,16 @@ function RoomHeader({
     <>
       <button className="secondary icon-text" onClick={onCopyInvite}>
         <Copy size={18} />
-        {copied ? 'Скопировано' : 'Пригласить'}
+        <span>{copied ? 'Скопировано' : 'Пригласить'}</span>
       </button>
       <button className="secondary icon-text" onClick={onLeaveRoom}>
         <DoorOpen size={18} />
-        Покинуть
+        <span>Покинуть</span>
       </button>
       {isHost && room.status !== 'lobby' && (
         <button className="secondary icon-text" onClick={onResetGame}>
           <RotateCcw size={18} />
-          В лобби
+          <span>В лобби</span>
         </button>
       )}
     </>
@@ -1066,7 +1069,10 @@ function RoomHeader({
       </div>
       <div className="top-actions">{renderActions()}</div>
       <details className="room-actions-menu">
-        <summary className="secondary icon-text">Комната</summary>
+        <summary className="secondary icon-text">
+          <Users size={18} />
+          <span>Комната</span>
+        </summary>
         <div className="room-actions-popover">{renderActions()}</div>
       </details>
     </header>

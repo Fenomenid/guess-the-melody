@@ -248,6 +248,10 @@ h2 {
   justify-content: flex-start;
 }
 
+.room-actions-popover .icon-text span {
+  display: inline;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
@@ -255,7 +259,7 @@ h2 {
 }
 
 .layout.question-layout {
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .sidebar,
@@ -1908,13 +1912,80 @@ select:focus {
     padding: 16px;
   }
 
+  .page.result-page {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
   .topbar {
     align-items: flex-start;
     flex-direction: column;
   }
 
+  .top-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 44px);
+    justify-content: start;
+  }
+
+  .top-actions .icon-text {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .top-actions .icon-text span {
+    display: none;
+  }
+
+  .room-actions-menu > summary {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .room-actions-menu > summary span {
+    display: none;
+  }
+
+  .room-actions-popover .icon-text {
+    width: 100%;
+    min-width: 0;
+    padding: 0 14px;
+    justify-content: flex-start;
+  }
+
+  .room-actions-popover .icon-text span {
+    display: inline;
+  }
+
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .result-page .topbar {
+    order: 2;
+    margin-top: 16px;
+    margin-bottom: 0;
+  }
+
+  .result-page .layout {
+    order: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .result-page .game-panel {
+    order: -1;
+  }
+
+  .result-page .players-panel {
+    order: 1;
   }
 
   .stage {
