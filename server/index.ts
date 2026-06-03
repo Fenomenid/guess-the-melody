@@ -118,6 +118,16 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('view_room', ({ code }: { code: string }, callback) => {
+    try {
+      const room = engine.getPublicRoom(code.toUpperCase());
+      socket.join(room.code);
+      callback?.({ data: room });
+    } catch (error) {
+      callback?.({ error: toClientError(error) });
+    }
+  });
+
   socket.on('update_settings', async ({ code, playerId, settings }: { code: string; playerId: string; settings: unknown }, callback) => {
     try {
       requireSocketPlayer(socket.id, code, playerId);

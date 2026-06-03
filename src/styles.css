@@ -167,6 +167,8 @@ h2 {
 }
 
 .auth-panel,
+.display-panel,
+.player-panel,
 .game-panel,
 .sidebar {
   background: var(--surface);
@@ -181,6 +183,152 @@ h2 {
   display: grid;
   gap: 18px;
   animation: stage-in 260ms ease both;
+}
+
+.display-page {
+  width: min(1440px, 100%);
+  min-height: 100vh;
+}
+
+.display-panel,
+.player-panel {
+  width: min(680px, 100%);
+  margin: 0 auto;
+  padding: 28px;
+  display: grid;
+  gap: 18px;
+}
+
+.display-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.display-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.display-meta span,
+.display-code {
+  width: fit-content;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-weight: 900;
+}
+
+.qr-card {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.qr-card img {
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: white;
+}
+
+.qr-card strong {
+  color: var(--text-strong);
+  font-size: 26px;
+}
+
+.qr-card span {
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.display-game-panel {
+  min-height: 620px;
+}
+
+.display-lobby-stage {
+  align-items: center;
+  text-align: center;
+}
+
+.display-question-stage .answer-button {
+  cursor: default;
+  opacity: 1;
+}
+
+.player-page {
+  width: min(520px, 100%);
+  min-height: 100dvh;
+  display: grid;
+  align-items: start;
+  padding: 12px;
+}
+
+.player-panel {
+  min-height: calc(100dvh - 24px);
+  padding: 16px;
+  align-content: start;
+}
+
+.player-mode-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.player-mode-header strong {
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.player-status-card {
+  min-height: 280px;
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.player-status-card p {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.player-question-stage {
+  display: grid;
+  gap: 10px;
+}
+
+.player-answer-notice {
+  min-height: 42px;
+}
+
+.player-answers {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.player-answers .answer-button {
+  min-height: 64px;
 }
 
 .brand {
@@ -1914,8 +2062,6 @@ select:focus {
 
   .page.result-page {
     min-height: 100dvh;
-    display: flex;
-    flex-direction: column;
   }
 
   .topbar {
@@ -1926,7 +2072,7 @@ select:focus {
   .top-actions {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(3, 44px);
+    grid-template-columns: repeat(auto-fit, 44px);
     justify-content: start;
   }
 
@@ -1965,27 +2111,6 @@ select:focus {
 
   .layout {
     grid-template-columns: 1fr;
-  }
-
-  .result-page .topbar {
-    order: 2;
-    margin-top: 16px;
-    margin-bottom: 0;
-  }
-
-  .result-page .layout {
-    order: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-  }
-
-  .result-page .game-panel {
-    order: -1;
-  }
-
-  .result-page .players-panel {
-    order: 1;
   }
 
   .stage {

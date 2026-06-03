@@ -123,6 +123,8 @@ type ConfirmDialogState = {
   onConfirm: () => void;
 };
 
+type AppMode = 'normal' | 'display' | 'player';
+
 function hasRevealedAnswer(player: Player): player is Player & { lastAnswer: { optionId: string; isCorrect: boolean; responseMs: number; points: number; answerChanges: number } } {
   return Boolean(player.lastAnswer && 'optionId' in player.lastAnswer);
 }
@@ -146,9 +148,17 @@ function getRoomCodeFromUrl(): string {
   return (pathMatch?.[1] ?? queryRoom ?? '').toUpperCase();
 }
 
+function getAppModeFromUrl(): AppMode {
+  const pathMode = window.location.pathname.match(/\/room\/[A-Za-z0-9]{4,8}\/(display|player)\b/)?.[1];
+  const queryMode = new URLSearchParams(window.location.search).get('mode');
+  const mode = pathMode ?? queryMode;
+  return mode === 'display' || mode === 'player' ? mode : 'normal';
+}
+
 function App() {
   const [playerId] = useState(() => getOrCreatePlayerId());
   const roomCodeFromUrl = useMemo(() => getRoomCodeFromUrl(), []);
+  const appMode = useMemo(() => getAppModeFromUrl(), []);
   const [playerName, setPlayerName] = useState(() => localStorage.getItem('playerName') ?? '');
   const [joinCode, setJoinCode] = useState(roomCodeFromUrl);
   const [room, setRoom] = useState<Room | null>(null);
@@ -198,6 +208,24 @@ function App() {
 
     const rejoinCurrentRoom = () => {
       const currentRoom = roomRef.current;
+      if (appMode === 'display') {
+        const code = currentRoom?.code ?? roomCodeFromUrl;
+        if (!code) {
+          return;
+        }
+        socket.emit('view_room', { code }, (response: { data?: Room; error?: string }) => {
+          if (response.error) {
+            setError(`Не удалось открыть экран ведущего: ${response.error}`);
+            return;
+          }
+          if (response.data) {
+            handleRoomState(response.data);
+            setError('');
+          }
+        });
+        return;
+      }
+
       const name = (localStorage.getItem('playerName') ?? playerNameRef.current).trim();
       if (!currentRoom || !name || leftRoomCodesRef.current.has(currentRoom.code)) {
         return;
@@ -243,13 +271,20 @@ function App() {
       socket.off('disconnect', handleDisconnect);
       socket.off('kicked');
     };
-  }, []);
+  }, [appMode, roomCodeFromUrl]);
 
   useEffect(() => {
-    if (!room && roomCodeFromUrl && playerName.trim()) {
+    if (room || !roomCodeFromUrl) {
+      return;
+    }
+    if (appMode === 'display') {
+      emit<Room>('view_room', { code: roomCodeFromUrl }, handleRoomState, 'Открываем экран ведущего');
+      return;
+    }
+    if (playerName.trim()) {
       emit<Room>('join_room', { code: roomCodeFromUrl, playerId, playerName: playerName.trim() }, handleRoomState, 'Входим в комнату');
     }
-  }, []);
+  }, [appMode, room, roomCodeFromUrl, playerId, playerName]);
 
   useEffect(() => {
     localStorage.setItem('volume', String(volume));
@@ -261,6 +296,20 @@ function App() {
   useEffect(() => {
     setSelectedOptionId('');
   }, [room?.currentQuestion?.id]);
+
+  useEffect(() => {
+    if (!room) {
+      return undefined;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [room?.status, room?.currentQuestion?.id, room?.round]);
 
   useEffect(() => {
     if (!volumeOpen) {
@@ -291,8 +340,9 @@ function App() {
       return;
     }
     setRoom(nextRoom);
-    if (window.location.pathname !== `/room/${nextRoom.code}`) {
-      window.history.replaceState(null, '', `/room/${nextRoom.code}`);
+    const nextPath = appMode === 'normal' ? `/room/${nextRoom.code}` : `/room/${nextRoom.code}/${appMode}`;
+    if (window.location.pathname !== nextPath) {
+      window.history.replaceState(null, '', nextPath);
     }
   }
 
@@ -437,6 +487,11 @@ function App() {
     window.setTimeout(() => setCopied(false), 1400);
   }
 
+  function openDisplayMode() {
+    if (!room) return;
+    window.open(displayRoomUrl(room.code), '_blank', 'noopener,noreferrer');
+  }
+
   const volumeButton = (
     <div className="floating-volume" onPointerDown={(event) => event.stopPropagation()}>
       <button className="round-button" type="button" aria-label="Громкость" onClick={() => setVolumeOpen((value) => !value)}>
@@ -451,6 +506,23 @@ function App() {
       )}
     </div>
   );
+
+  if (!room && appMode === 'display' && roomCodeFromUrl) {
+    return <DisplayWaiting roomCode={roomCodeFromUrl} error={error} isBusy={isBusy} />;
+  }
+
+  if (!room && appMode === 'player' && roomCodeFromUrl) {
+    return (
+      <PlayerJoinScreen
+        roomCode={roomCodeFromUrl}
+        playerName={playerName}
+        isBusy={isBusy}
+        error={error}
+        onPlayerNameChange={setPlayerName}
+        onJoin={joinRoom}
+      />
+    );
+  }
 
   if (!room) {
     return (
@@ -503,6 +575,29 @@ function App() {
     );
   }
 
+  if (appMode === 'display') {
+    return (
+      <DisplayRoom
+        room={room}
+        volume={volume}
+        audioRef={audioRef}
+        answeredCount={answeredCount}
+        playerCount={playerCount}
+      />
+    );
+  }
+
+  if (appMode === 'player') {
+    return (
+      <PlayerRoom
+        room={room}
+        me={me}
+        selectedOptionId={selectedOptionId}
+        onSubmit={submitAnswer}
+      />
+    );
+  }
+
   return (
     <main className={['page', isQuestionStage ? 'question-page' : '', isResultStage ? 'result-page' : ''].filter(Boolean).join(' ')}>
       <RoomHeader
@@ -512,6 +607,7 @@ function App() {
         copied={copied}
         isQuestionStage={isQuestionStage}
         onCopyInvite={copyInvite}
+        onOpenDisplay={openDisplayMode}
         onLeaveRoom={requestLeaveRoom}
         onResetGame={requestResetGame}
       />
@@ -1018,6 +1114,279 @@ function Lobby({
   );
 }
 
+function DisplayWaiting({ roomCode, error, isBusy }: { roomCode: string; error: string; isBusy: boolean }) {
+  return (
+    <main className="page display-page">
+      <section className="display-panel">
+        <p className="eyebrow">Экран ведущего</p>
+        <h1 className="app-title">Угадай мелодию</h1>
+        <div className="display-code">Комната {roomCode}</div>
+        {isBusy && <LoadingStrip label="Подключаем экран" />}
+        {error && <p className="error">{error}</p>}
+      </section>
+    </main>
+  );
+}
+
+function PlayerJoinScreen({
+  roomCode,
+  playerName,
+  isBusy,
+  error,
+  onPlayerNameChange,
+  onJoin
+}: {
+  roomCode: string;
+  playerName: string;
+  isBusy: boolean;
+  error: string;
+  onPlayerNameChange: (value: string) => void;
+  onJoin: () => void;
+}) {
+  return (
+    <main className="page player-page">
+      <section className="player-panel">
+        <p className="eyebrow">Комната {roomCode}</p>
+        <h1>Войти в игру</h1>
+        <label className="field">
+          <span>Ваше имя</span>
+          <input value={playerName} onChange={(event) => onPlayerNameChange(event.target.value)} maxLength={32} placeholder="Например, Аня" />
+        </label>
+        <button className="primary" onClick={onJoin} disabled={isBusy}>
+          <LogIn size={18} />
+          Играть
+        </button>
+        {isBusy && <LoadingStrip label="Входим в комнату" />}
+        {error && <p className="error">{error}</p>}
+      </section>
+    </main>
+  );
+}
+
+function DisplayRoom({
+  room,
+  volume,
+  audioRef,
+  answeredCount,
+  playerCount
+}: {
+  room: Room;
+  volume: number;
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>;
+  answeredCount: number;
+  playerCount: number;
+}) {
+  const playerUrl = playerRoomUrl(room.code);
+  const noopEmit = () => undefined;
+
+  return (
+    <main className="page display-page">
+      <section className="display-hero">
+        <div>
+          <p className="eyebrow">Комната {room.code}</p>
+          <h1 className="app-title">Угадай мелодию</h1>
+          <div className="display-meta">
+            <span>Игроков: {playerCount}</span>
+            <span>Ответили: {answeredCount}/{playerCount}</span>
+          </div>
+        </div>
+        <QrJoinCard roomCode={room.code} url={playerUrl} />
+      </section>
+
+      <section className="game-panel display-game-panel">
+        {room.status === 'lobby' && (
+          <div className="stage display-lobby-stage">
+            <h2>Ждем игроков</h2>
+            <p className="muted">Игроки сканируют QR-код и отвечают со своих телефонов.</p>
+          </div>
+        )}
+        {room.status === 'preparing' && <PreparingStage />}
+        {room.status === 'question' && room.currentQuestion && (
+          <DisplayQuestionStage room={room} volume={volume} audioRef={audioRef} answeredCount={answeredCount} playerCount={playerCount} />
+        )}
+        {(room.status === 'round-result' || room.status === 'finished') && (
+          <ResultStage room={room} isHost={false} playerId="" emit={noopEmit} />
+        )}
+      </section>
+    </main>
+  );
+}
+
+function QrJoinCard({ roomCode, url }: { roomCode: string; url: string }) {
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(url)}`;
+
+  return (
+    <aside className="qr-card">
+      <img src={qrUrl} alt={`QR-код для входа в комнату ${roomCode}`} />
+      <strong>{roomCode}</strong>
+      <span>{url}</span>
+    </aside>
+  );
+}
+
+function DisplayQuestionStage({
+  room,
+  volume,
+  audioRef,
+  answeredCount,
+  playerCount
+}: {
+  room: Room;
+  volume: number;
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>;
+  answeredCount: number;
+  playerCount: number;
+}) {
+  const question = room.currentQuestion!;
+  const countdown = useQuestionCountdown(question, room.serverTime);
+  const [audioIssue, setAudioIssue] = useState('');
+
+  function playAudio() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    setAudioIssue('');
+    void audio.play().catch(() => setAudioIssue('Браузер не запустил звук автоматически. Нажмите повторить.'));
+  }
+
+  useEffect(() => {
+    setAudioIssue('');
+    const timeout = window.setTimeout(playAudio, 150);
+    return () => window.clearTimeout(timeout);
+  }, [question.id]);
+
+  return (
+    <div className="stage question-stage display-question-stage">
+      <audio
+        ref={audioRef}
+        src={question.audioUrl}
+        preload="auto"
+        autoPlay
+        onCanPlay={playAudio}
+        onError={() => setAudioIssue('Не удалось воспроизвести этот отрывок.')}
+        onLoadedMetadata={(event) => {
+          event.currentTarget.volume = volume;
+        }}
+      />
+      <div className="round-header round-topline">
+        <span>{room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}</span>
+        <span>{answerModePrompt(room.settings.answerMode)}</span>
+        <span className="answered-pill">Ответили {answeredCount}/{playerCount}</span>
+      </div>
+      <div className="music-visual">
+        <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
+          <Timer size={26} />
+          <strong>{countdown.secondsLeft}</strong>
+          <span>сек</span>
+        </div>
+        <div className="music-activity">
+          {question.sourceName && (
+            <div className="source-pill">
+              <Radio size={16} />
+              <span>{question.sourceName}</span>
+            </div>
+          )}
+          <Equalizer />
+        </div>
+      </div>
+      {audioIssue && (
+        <div className="notice audio-notice">
+          <VolumeX size={18} />
+          <span>{audioIssue}</span>
+          <button className="secondary" type="button" onClick={playAudio}>
+            Повторить
+          </button>
+        </div>
+      )}
+      <div className="answers display-answers">
+        {question.options.map((option) => (
+          <button className="answer-button" key={option.id} disabled>
+            {option.title}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PlayerRoom({
+  room,
+  me,
+  selectedOptionId,
+  onSubmit
+}: {
+  room: Room;
+  me?: Player;
+  selectedOptionId: string;
+  onSubmit: (optionId: string) => void;
+}) {
+  return (
+    <main className="page player-page">
+      <section className="player-panel">
+        <div className="player-mode-header">
+          <span>Комната {room.code}</span>
+          <strong>{me?.name ?? 'Игрок'}</strong>
+        </div>
+        {room.status === 'lobby' && <PlayerStatus title="Ждем старт" text="Ведущий скоро начнет раунд." />}
+        {room.status === 'preparing' && <PlayerStatus title="Готовим трек" text="Сейчас появятся варианты ответа." />}
+        {room.status === 'question' && room.currentQuestion && (
+          <PlayerQuestionStage room={room} me={me} selectedOptionId={selectedOptionId} onSubmit={onSubmit} />
+        )}
+        {room.status === 'round-result' && <PlayerStatus title="Раунд завершен" text={me?.lastAnswer ? 'Ответ принят. Ждем следующий раунд.' : 'Вы не ответили в этом раунде.'} />}
+        {room.status === 'finished' && <PlayerStatus title="Игра окончена" text={`Победитель: ${room.players[0]?.name ?? 'игрок'}.`} />}
+      </section>
+    </main>
+  );
+}
+
+function PlayerStatus({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="player-status-card">
+      <h1>{title}</h1>
+      <p>{text}</p>
+    </div>
+  );
+}
+
+function PlayerQuestionStage({
+  room,
+  me,
+  selectedOptionId,
+  onSubmit
+}: {
+  room: Room;
+  me?: Player;
+  selectedOptionId: string;
+  onSubmit: (optionId: string) => void;
+}) {
+  const question = room.currentQuestion!;
+  const hasAnswered = Boolean(me?.lastAnswer);
+  const isAnswerLocked = hasAnswered || Boolean(selectedOptionId);
+
+  return (
+    <div className="player-question-stage">
+      <div className="round-header round-topline">
+        <span>{room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}</span>
+        <span>{hasAnswered ? 'Ответ принят' : answerModePrompt(room.settings.answerMode)}</span>
+      </div>
+      {isAnswerLocked && <div className="notice player-answer-notice">Ответ принят. Ждем остальных игроков.</div>}
+      <div className="answers player-answers">
+        {question.options.map((option) => (
+          <button
+            className={['answer-button', selectedOptionId === option.id ? 'selected-answer' : '', isAnswerLocked ? 'locked-answer' : ''].filter(Boolean).join(' ')}
+            key={option.id}
+            onClick={() => onSubmit(option.id)}
+            disabled={isAnswerLocked}
+          >
+            {option.title}
+            {selectedOptionId === option.id && <span className="answer-picked" aria-label="Выбрано">✓</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function RoomHeader({
   room,
   me,
@@ -1025,6 +1394,7 @@ function RoomHeader({
   copied,
   isQuestionStage,
   onCopyInvite,
+  onOpenDisplay,
   onLeaveRoom,
   onResetGame
 }: {
@@ -1034,6 +1404,7 @@ function RoomHeader({
   copied: boolean;
   isQuestionStage: boolean;
   onCopyInvite: () => void;
+  onOpenDisplay: () => void;
   onLeaveRoom: () => void;
   onResetGame: () => void;
 }) {
@@ -1042,6 +1413,10 @@ function RoomHeader({
       <button className="secondary icon-text" onClick={onCopyInvite}>
         <Copy size={18} />
         <span>{copied ? 'Скопировано' : 'Пригласить'}</span>
+      </button>
+      <button className="secondary icon-text" onClick={onOpenDisplay}>
+        <Radio size={18} />
+        <span>Экран ведущего</span>
       </button>
       <button className="secondary icon-text" onClick={onLeaveRoom}>
         <DoorOpen size={18} />
@@ -1174,6 +1549,14 @@ function getPlaylistSources(settings: Room['settings']): PlaylistSource[] {
     url,
     name: defaultPlaylistSourceName(url, index)
   }));
+}
+
+function displayRoomUrl(code: string): string {
+  return `${location.origin}/room/${code}/display`;
+}
+
+function playerRoomUrl(code: string): string {
+  return `${location.origin}/room/${code}/player`;
 }
 
 function defaultPlaylistSourceName(url: string, index: number): string {
