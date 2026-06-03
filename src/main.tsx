@@ -172,6 +172,9 @@ function App() {
     () => [...(room?.players ?? [])].sort((a, b) => b.score - a.score || Number(b.connected) - Number(a.connected)),
     [room?.players]
   );
+  const isQuestionStage = room?.status === 'question' && Boolean(room.currentQuestion);
+  const answeredCount = room?.players.filter((player) => Boolean(player.lastAnswer)).length ?? 0;
+  const playerCount = room?.players.length ?? 0;
 
   useEffect(() => {
     document.documentElement.dataset.theme = 'dark';
@@ -500,71 +503,31 @@ function App() {
   }
 
   return (
-    <main className="page">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Комната {room.code}</p>
-          <h1 className="app-title">Угадай мелодию</h1>
-          {me && (
-            <p className="self-label">
-              Вы: <strong>{me.name}</strong>
-            </p>
-          )}
-        </div>
-        <div className="top-actions">
-          <button className="secondary icon-text" onClick={copyInvite}>
-            <Copy size={18} />
-            {copied ? 'Скопировано' : 'Пригласить'}
-          </button>
-          <button className="secondary icon-text" onClick={requestLeaveRoom}>
-            <DoorOpen size={18} />
-            Покинуть
-          </button>
-          {isHost && room.status !== 'lobby' && (
-            <button className="secondary icon-text" onClick={requestResetGame}>
-              <RotateCcw size={18} />
-              В лобби
-            </button>
-          )}
-        </div>
-      </header>
+    <main className={['page', isQuestionStage ? 'question-page' : ''].filter(Boolean).join(' ')}>
+      <RoomHeader
+        room={room}
+        me={me}
+        isHost={isHost}
+        copied={copied}
+        isQuestionStage={isQuestionStage}
+        onCopyInvite={copyInvite}
+        onLeaveRoom={requestLeaveRoom}
+        onResetGame={requestResetGame}
+      />
 
       {error && <p className="error">{error}</p>}
 
-      <div className="layout">
-        <aside className="sidebar">
-          <div className="section-title">
-            <Users size={18} />
-            Игроки
-          </div>
-          <div className="players">
-            {sortedPlayers.map((player, index) => (
-              <div
-                className={['player-row', player.id === playerId ? 'self' : '', player.lastAnswer ? 'answered' : '', !player.connected ? 'offline' : '']
-                  .filter(Boolean)
-                  .join(' ')}
-                key={player.id}
-              >
-                <div>
-                  <strong className="player-name">
-                    {index + 1}. {player.name}
-                    {player.id === playerId && <span className="self-mark">(вы)</span>}
-                    {player.isHost && <KeyRound size={15} aria-label="Хост" />}
-                  </strong>
-                  <span>{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
-                </div>
-                <div className="player-row-actions">
-                  <b>{player.score}</b>
-                  {isHost && player.id !== playerId && room.status === 'lobby' && (
-                    <button className="kick-button" type="button" aria-label={`Кикнуть ${player.name}`} onClick={() => requestKickPlayer(player)}>
-                      <UserMinus size={11} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </aside>
+      <div className={['layout', isQuestionStage ? 'question-layout' : ''].filter(Boolean).join(' ')}>
+        <PlayersPanel
+          room={room}
+          players={sortedPlayers}
+          playerId={playerId}
+          isHost={isHost}
+          isQuestionStage={isQuestionStage}
+          answeredCount={answeredCount}
+          playerCount={playerCount}
+          onKickPlayer={requestKickPlayer}
+        />
 
         <section className="game-panel">
           {room.status === 'lobby' && (
@@ -587,6 +550,8 @@ function App() {
               selectedOptionId={selectedOptionId}
               volume={volume}
               audioRef={audioRef}
+              answeredCount={answeredCount}
+              playerCount={playerCount}
               onSubmit={submitAnswer}
             />
           )}
@@ -1050,6 +1015,150 @@ function Lobby({
   );
 }
 
+function RoomHeader({
+  room,
+  me,
+  isHost,
+  copied,
+  isQuestionStage,
+  onCopyInvite,
+  onLeaveRoom,
+  onResetGame
+}: {
+  room: Room;
+  me?: Player;
+  isHost: boolean;
+  copied: boolean;
+  isQuestionStage: boolean;
+  onCopyInvite: () => void;
+  onLeaveRoom: () => void;
+  onResetGame: () => void;
+}) {
+  const renderActions = () => (
+    <>
+      <button className="secondary icon-text" onClick={onCopyInvite}>
+        <Copy size={18} />
+        {copied ? 'Скопировано' : 'Пригласить'}
+      </button>
+      <button className="secondary icon-text" onClick={onLeaveRoom}>
+        <DoorOpen size={18} />
+        Покинуть
+      </button>
+      {isHost && room.status !== 'lobby' && (
+        <button className="secondary icon-text" onClick={onResetGame}>
+          <RotateCcw size={18} />
+          В лобби
+        </button>
+      )}
+    </>
+  );
+
+  return (
+    <header className={['topbar', isQuestionStage ? 'question-topbar' : ''].filter(Boolean).join(' ')}>
+      <div>
+        <p className="eyebrow">Комната {room.code}</p>
+        <h1 className="app-title">Угадай мелодию</h1>
+        {me && (
+          <p className="self-label">
+            Вы: <strong>{me.name}</strong>
+          </p>
+        )}
+      </div>
+      <div className="top-actions">{renderActions()}</div>
+      <details className="room-actions-menu">
+        <summary className="secondary icon-text">Комната</summary>
+        <div className="room-actions-popover">{renderActions()}</div>
+      </details>
+    </header>
+  );
+}
+
+function PlayersPanel({
+  room,
+  players,
+  playerId,
+  isHost,
+  isQuestionStage,
+  answeredCount,
+  playerCount,
+  onKickPlayer
+}: {
+  room: Room;
+  players: Player[];
+  playerId: string;
+  isHost: boolean;
+  isQuestionStage: boolean;
+  answeredCount: number;
+  playerCount: number;
+  onKickPlayer: (player: Player) => void;
+}) {
+  const rows = (
+    <PlayerRows room={room} players={players} playerId={playerId} isHost={isHost} onKickPlayer={onKickPlayer} />
+  );
+
+  return (
+    <aside className={['sidebar', 'players-panel', isQuestionStage ? 'question-players-panel' : ''].filter(Boolean).join(' ')}>
+      <div className="section-title">
+        <Users size={18} />
+        Игроки
+        {isQuestionStage && <span className="answered-pill">Ответили {answeredCount}/{playerCount}</span>}
+      </div>
+      <div className="players players-full">{rows}</div>
+      <details className="players-collapse">
+        <summary>
+          <span>Игроки</span>
+          <b>Ответили {answeredCount}/{playerCount}</b>
+        </summary>
+        <div className="players">{rows}</div>
+      </details>
+    </aside>
+  );
+}
+
+function PlayerRows({
+  room,
+  players,
+  playerId,
+  isHost,
+  onKickPlayer
+}: {
+  room: Room;
+  players: Player[];
+  playerId: string;
+  isHost: boolean;
+  onKickPlayer: (player: Player) => void;
+}) {
+  return (
+    <>
+      {players.map((player, index) => (
+        <div
+          className={['player-row', player.id === playerId ? 'self' : '', player.lastAnswer ? 'answered' : '', !player.connected ? 'offline' : '']
+            .filter(Boolean)
+            .join(' ')}
+          key={player.id}
+        >
+          <div>
+            <strong className="player-name">
+              {index + 1}. {player.name}
+              {player.id === playerId && <span className="self-mark">(вы)</span>}
+              {player.isHost && <KeyRound size={15} aria-label="Хост" />}
+            </strong>
+            <span>{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
+          </div>
+          <div className="player-row-actions">
+            <b>{player.score}</b>
+            {isHost && player.id !== playerId && room.status === 'lobby' && (
+              <button className="kick-button" type="button" aria-label={`Кикнуть ${player.name}`} onClick={() => onKickPlayer(player)}>
+                <UserMinus size={11} />
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 function getPlaylistSources(settings: Room['settings']): PlaylistSource[] {
   if (settings.playlistSources?.length) {
     return settings.playlistSources;
@@ -1105,6 +1214,8 @@ function QuestionStage({
   selectedOptionId,
   volume,
   audioRef,
+  answeredCount,
+  playerCount,
   onSubmit
 }: {
   room: Room;
@@ -1112,6 +1223,8 @@ function QuestionStage({
   selectedOptionId: string;
   volume: number;
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
+  answeredCount: number;
+  playerCount: number;
   onSubmit: (optionId: string) => void;
 }) {
   const question = room.currentQuestion!;
@@ -1133,7 +1246,7 @@ function QuestionStage({
   }, [question.id]);
 
   return (
-    <div className="stage question-stage">
+    <div className="stage question-stage round-screen">
       <audio
         ref={audioRef}
         src={question.audioUrl}
@@ -1146,13 +1259,14 @@ function QuestionStage({
         }}
       />
 
-      <div className="round-header">
+      <div className="round-header round-topline">
         <span>
           {room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}
         </span>
         <span>{me?.lastAnswer ? 'Ответ принят' : answerModePrompt(room.settings.answerMode)}</span>
+        <span className="answered-pill">Ответили {answeredCount}/{playerCount}</span>
       </div>
-<div className="music-visual">
+      <div className="music-visual">
         <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
           <Timer size={26} />
           <strong>{countdown.secondsLeft}</strong>
@@ -1198,7 +1312,7 @@ function QuestionStage({
         ))}
       </div>
 
-<AchievementShelf achievements={room.achievements} title="События" compact />
+      <AchievementShelf achievements={room.achievements} title="События" compact />
 
     </div>
   );

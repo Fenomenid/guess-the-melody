@@ -1,91 +1,91 @@
 # Guess the Melody
 
-Web party game for guessing songs in shared rooms with Yandex Music sources.
+Web party game for guessing songs together in shared rooms. The app uses Yandex Music sources, creates short music rounds, scores answers by speed, and ends with a podium and match moments.
 
-## Features
+## What It Does
 
-- Shared rooms without registration.
-- Yandex Music themes, charts, playlists, and album links.
-- Up to 100 rounds or a target score up to 200000.
-- Up to 10 custom playlist/album links per game.
-- Optional answer changing until the round ends.
-- Automatic next round start after the result screen.
-- Round results and a final podium page.
-- Long games start from a small playable pool and continue loading more tracks in the background.
+- Creates shareable game rooms without registration.
+- Lets the host combine built-in Yandex Music themes with playlist or album links.
+- Supports rounds-based games and score-target games.
+- Supports three answer modes: track titles, artists, and mixed answers.
+- Has easy and hard audio modes.
+- Scores correct answers by speed and can penalize answer changes.
+- Shows safe live achievements during the round and reveal achievements after the answer is known.
+- Shows final match moments built from the full round history.
+- Keeps room state on the server and restores rooms through the configured room store.
+
+## Tech Stack
+
+- React 19
+- Vite
+- TypeScript
+- Express
+- Socket.IO
+- Vitest
 
 ## Local Development
 
-Run from the project directory:
+Install dependencies:
 
 ```powershell
 npm.cmd install
-$env:YANDEX_MUSIC_USE_DEMO="false"
-$env:YANDEX_MUSIC_ALLOW_FULL_TRACK_FALLBACK="false"
+```
+
+Start the client and server in development mode:
+
+```powershell
 npm.cmd run dev
 ```
 
-Open: http://127.0.0.1:5173
+Open:
 
-## Local Production Check
+```text
+http://127.0.0.1:5173
+```
 
-Run from the project directory:
+## Production Build
+
+Build the client and server:
 
 ```powershell
 npm.cmd run build
-$env:YANDEX_MUSIC_USE_DEMO="false"
-$env:YANDEX_MUSIC_ALLOW_FULL_TRACK_FALLBACK="false"
+```
+
+Start the built server:
+
+```powershell
 npm.cmd start
 ```
 
-Open: http://127.0.0.1:3001
-
-## Render Yandex Music Diagnostics
-
-After deployment, open the diagnostics endpoint on your deployed service:
+Open:
 
 ```text
-https://<your-render-service>/api/music/diagnostics
+http://127.0.0.1:3001
 ```
 
-Useful fields:
+## Tests
 
-- `forceDemo: false` means demo mode is disabled.
-- `tokenConfigured` shows whether a Yandex Music token is configured.
-- `allowFullTrackFallback: false` means full tracks are not used as a fallback.
-- `lastLoadStats.difficulty` shows whether the last loaded pool used `easy` trailers or `hard` full-track starts.
-- `lastLoadStats.smartPreviewAudioUrls` shows how many playable trailer URLs were found in easy mode.
-- `lastFallbackReason` explains why the server switched to the reserved fallback pool after a track-loading attempt.
+Run the test suite:
 
-If `lastFallbackReason` is empty, create a room, start a game, then refresh diagnostics. The reason is recorded only after the server tries to load tracks.
-
-You can also check trailer availability directly:
-
-```text
-https://<your-render-service>/api/music/probe?difficulty=easy&limit=5
+```powershell
+npm.cmd test
 ```
 
-For easy mode, successful rows should have `hasAudio: true` and `isSmartPreview: true`.
+## Configuration
 
-## Render Environment
-
-Minimum:
+Common environment variables:
 
 ```text
 YANDEX_MUSIC_USE_DEMO=false
 YANDEX_MUSIC_ALLOW_FULL_TRACK_FALLBACK=false
+YANDEX_MUSIC_TOKEN=optional_token_for_account_limited_requests
 ```
 
-Optional, for API requests that require account access:
-
-```text
-YANDEX_MUSIC_TOKEN=...
-```
-
-Upstash Redis is only for keeping rooms after a free Render instance sleeps. It does not affect Yandex Music availability.
+Demo mode can be useful for local checks without relying on external music availability.
 
 ## Music Sources
 
-In the lobby, the host can combine built-in themes with custom Yandex Music links.
+The host can select built-in quick themes and add custom Yandex Music links.
 
 Supported custom links:
 
@@ -93,6 +93,43 @@ Supported custom links:
 - `https://music.yandex.ru/playlists/<uuid>`
 - `https://music.yandex.ru/album/<id>`
 
-When several links are added, the server mixes candidate tracks across sources before selecting playable previews, so one large playlist should not dominate smaller ones. If one source fails, the server logs it and continues with the remaining sources.
+When several sources are selected, the server mixes candidate tracks across sources before choosing playable round tracks and answer options.
 
-If a round starts but the browser does not play audio, use the on-screen retry button. Browser autoplay rules or an expired remote audio URL can still block playback for an individual client.
+## Game Flow
+
+1. A player creates a room and becomes the host.
+2. Other players join by room code or room link.
+3. The host configures sources, difficulty, answer mode, win condition, timer, and answer-change behavior.
+4. The server prepares a track pool and starts a round.
+5. Players listen to the audio preview and choose an answer.
+6. The round reveal shows the correct track, points, and round achievements.
+7. The game continues until the selected win condition is reached.
+8. The final screen shows the winner, podium, score rows, and match moments.
+
+## Useful Endpoints
+
+- `GET /api/health` - server health check.
+- `GET /api/themes` - built-in theme list.
+- `GET /api/music/playlists/search?q=<query>` - Yandex Music playlist search.
+- `GET /api/music/diagnostics` - music provider diagnostics.
+- `GET /api/music/probe?difficulty=easy&limit=5` - playable audio probe.
+
+## Repository Layout
+
+```text
+src/
+  main.tsx        React app and Socket.IO client flow
+  styles.css      visual system and responsive layout
+server/
+  index.ts        Express and Socket.IO server
+  game.ts         room state, rounds, scoring, achievements
+  music.ts        Yandex Music source loading and fallback handling
+  roomStore.ts    room persistence abstraction
+scripts/
+  write-server-package.cjs
+  probe-yandex-trailers.ts
+```
+
+## Notes
+
+If audio does not start in a browser, use the in-game retry control. Browser autoplay rules or expired remote audio URLs can still block playback for an individual client.
