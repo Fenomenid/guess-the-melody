@@ -2138,10 +2138,14 @@ function AchievementShelf({ achievements, title = 'Ачивки', compact = fals
           <article className={['achievement-card', achievement.tone, achievement.chainStep && achievement.chainStep > 1 ? 'chained' : ''].filter(Boolean).join(' ')} key={achievement.id}>
             <AchievementIcon achievement={achievement} />
             <div>
-              <strong>{achievement.title}</strong>
-              <small className={compact ? 'achievement-description compact-description' : 'achievement-description'}>
-                {achievement.description}
-              </small>
+              {compact ? (
+                <strong className="compact-description">{achievement.description}</strong>
+              ) : (
+                <>
+                  <strong>{achievement.title}</strong>
+                  <small className="achievement-description">{achievement.description}</small>
+                </>
+              )}
             </div>
           </article>
         ))}
@@ -2167,9 +2171,7 @@ function MatchMoments({ moments }: { moments: MatchMoment[] }) {
             <AchievementIcon achievement={moment} />
             <div>
               <strong>{moment.title}</strong>
-              <small>
-                Раунд {moment.round}: {moment.description}
-              </small>
+              <small>{moment.description}</small>
             </div>
           </article>
         ))}

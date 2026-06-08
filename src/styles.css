@@ -2182,10 +2182,6 @@ select:focus {
     max-width: none;
   }
 
-  .achievement-shelf.compact .compact-description {
-    display: none;
-  }
-
   .question-page .achievement-shelf.compact .achievement-icon {
     border-radius: 999px;
   }
