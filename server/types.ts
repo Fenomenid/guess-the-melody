@@ -58,13 +58,25 @@ export type Player = {
 
 export type PlayerAnswerResult = {
   optionId: string;
+  firstOptionId: string;
+  previousOptionId?: string;
   isCorrect: boolean;
   responseMs: number;
+  firstResponseMs: number;
+  lastResponseMs: number;
   points: number;
   answerChanges: number;
+  answerEvents: AnswerEvent[];
 };
 
-export type PublicPlayerAnswer = PlayerAnswerResult | { hasAnswered: true; responseMs: number; answerChanges: number };
+export type AnswerEvent = {
+  optionId: string;
+  responseMs: number;
+};
+
+export type PublicPlayerAnswer =
+  | PlayerAnswerResult
+  | { hasAnswered: true; responseMs: number; firstResponseMs: number; lastResponseMs: number; answerChanges: number };
 
 export type Achievement = {
   id: string;
@@ -73,6 +85,9 @@ export type Achievement = {
   description: string;
   recipient?: string;
   tone: 'safe' | 'good' | 'bad' | 'chaos';
+  chainId?: string;
+  chainStep?: number;
+  chainTotal?: number;
 };
 
 export type MatchMoment = Achievement & {

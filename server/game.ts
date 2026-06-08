@@ -24,10 +24,28 @@ type RoundHistoryEntry = {
 type RoundHistoryAnswer = {
   playerId: string;
   playerName: string;
+  optionId: string;
+  firstOptionId: string;
+  previousOptionId?: string;
   isCorrect: boolean;
   responseMs: number;
+  firstResponseMs: number;
+  lastResponseMs: number;
   points: number;
   answerChanges: number;
+  answerEvents: PlayerAnswerResult['answerEvents'];
+  wasOnCorrectAnswer: boolean;
+  leftCorrectAnswer: boolean;
+  changedToCorrectAnswer: boolean;
+};
+
+type ScoredAchievement = Achievement & {
+  weight: number;
+  createdAt?: number;
+};
+
+type ScoredMoment = MatchMoment & {
+  weight: number;
 };
 
 type Room = {
@@ -300,13 +318,26 @@ export class GameEngine {
 
     const responseMs = Math.max(0, now - room.currentQuestion.startedAt);
     const isCorrect = optionId === room.currentQuestion.correctOptionId;
-    const answerChanges = player.lastAnswer ? player.lastAnswer.answerChanges + 1 : 0;
+    const previousAnswer = player.lastAnswer;
+    const answerChanges = previousAnswer ? previousAnswer.answerChanges + 1 : 0;
     const penalty = answerChanges * ANSWER_CHANGE_PENALTY;
     const points = isCorrect
       ? Math.max(MIN_CORRECT_POINTS, calculatePoints(responseMs, room.currentQuestion.durationMs) - penalty)
       : -Math.min(MAX_WRONG_PENALTY, penalty);
+    const answerEvents = [...(previousAnswer?.answerEvents ?? []), { optionId, responseMs }];
 
-    player.lastAnswer = { optionId, isCorrect, responseMs, points, answerChanges };
+    player.lastAnswer = {
+      optionId,
+      firstOptionId: previousAnswer?.firstOptionId ?? optionId,
+      previousOptionId: previousAnswer?.optionId,
+      isCorrect,
+      responseMs,
+      firstResponseMs: previousAnswer?.firstResponseMs ?? responseMs,
+      lastResponseMs: responseMs,
+      points,
+      answerChanges,
+      answerEvents
+    };
     return player.lastAnswer;
   }
 
@@ -507,7 +538,13 @@ function toPublicPlayer(player: Player, revealAnswer: boolean): PublicPlayer {
 
   return {
     ...player,
-    lastAnswer: { hasAnswered: true, responseMs: player.lastAnswer.responseMs, answerChanges: player.lastAnswer.answerChanges }
+    lastAnswer: {
+      hasAnswered: true,
+      responseMs: player.lastAnswer.responseMs,
+      firstResponseMs: player.lastAnswer.firstResponseMs,
+      lastResponseMs: player.lastAnswer.lastResponseMs,
+      answerChanges: player.lastAnswer.answerChanges
+    }
   };
 }
 
@@ -541,30 +578,53 @@ function buildLiveAchievements(room: Room): Achievement[] {
   const answers = [...room.players.values()]
     .filter((player): player is Player & { lastAnswer: PlayerAnswerResult } => Boolean(player.lastAnswer))
     .sort((a, b) => a.lastAnswer.responseMs - b.lastAnswer.responseMs);
-  const achievements: Achievement[] = [];
+  const achievements: ScoredAchievement[] = [];
   const first = answers[0];
+  const second = answers[1];
 
   if (first) {
     achievements.push({
       id: `live-first-${question.id}-${first.id}`,
       icon: '⚡',
       title: 'Первый на кнопке',
-      description: `${first.name} уже ткнул вариант. Уверенность или паника?`,
+      description: pickVariant(`live-first-${question.id}-${first.id}`, [
+        `${first.name} уже ткнул вариант. Уверенность или паника?`,
+        `${first.name} нажал первым. Остальные еще слушают заставку.`,
+        `${first.name} решил не тратить жизнь на размышления.`
+      ]),
       recipient: first.name,
-      tone: 'safe'
+      tone: 'safe',
+      weight: 62,
+      createdAt: first.lastAnswer.responseMs
     });
   }
 
-  const changer = answers.find((player) => player.lastAnswer.answerChanges > 0);
-  if (changer) {
+  if (second) {
+    const closeToFirst = first ? second.lastAnswer.responseMs - first.lastAnswer.responseMs <= 500 : false;
     achievements.push({
-      id: `live-change-${question.id}-${changer.id}-${changer.lastAnswer.answerChanges}`,
-      icon: '↔',
-      title: 'Переобулся в воздухе',
-      description: `${changer.name} сменил ответ. Минус очки, плюс драма.`,
-      recipient: changer.name,
-      tone: 'chaos'
+      id: `live-second-${question.id}-${second.id}`,
+      icon: '⚡',
+      title: closeToFirst ? 'Почти киберспорт' : 'Серебряный тык',
+      description: closeToFirst
+        ? pickVariant(`live-second-close-${question.id}-${second.id}`, [
+            `${second.name} дышит в спину лидеру. Неприятно близко.`,
+            `${second.name} нажал почти одновременно. Судьи напряглись.`,
+            `${second.name} проиграл старт на какие-то крошки времени.`
+          ])
+        : pickVariant(`live-second-${question.id}-${second.id}`, [
+            `${second.name} пришел вторым. Быстро, но без обложки журнала.`,
+            `${second.name} почти украл момент, но палец был не самый ранний.`,
+            `${second.name} занял очередь сразу за главным нервным.`
+          ]),
+      recipient: second.name,
+      tone: 'safe',
+      weight: closeToFirst ? 64 : 52,
+      createdAt: second.lastAnswer.responseMs
     });
+  }
+
+  for (const player of answers) {
+    achievements.push(...buildAnswerChangeChain(question.id, player));
   }
 
   const late = answers.find((player) => player.lastAnswer.responseMs >= question.durationMs - 2_000);
@@ -573,9 +633,15 @@ function buildLiveAchievements(room: Room): Achievement[] {
       id: `live-late-${question.id}-${late.id}`,
       icon: '⏱',
       title: 'На последней секунде',
-      description: `${late.name} нажал так поздно, что таймер вспотел.`,
+      description: pickVariant(`live-late-${question.id}-${late.id}`, [
+        `${late.name} нажал так поздно, что таймер уже попрощался.`,
+        `${late.name} думал как взрослый. Или просто завис.`,
+        `${late.name} ворвался в раунд на закрывающихся дверях.`
+      ]),
       recipient: late.name,
-      tone: 'safe'
+      tone: 'safe',
+      weight: 58,
+      createdAt: late.lastAnswer.responseMs
     });
   }
 
@@ -584,19 +650,61 @@ function buildLiveAchievements(room: Room): Achievement[] {
       id: `live-all-${question.id}`,
       icon: '✓',
       title: 'Все в деле',
-      description: 'Все ответили. Теперь ждём, кто зря был таким уверенным.',
+      description: pickVariant(`live-all-${question.id}`, [
+        'Все ответили. Теперь узнаем, кто зря был таким уверенным.',
+        'Кнопки нажаты, репутации поставлены на кон.',
+        'Все в деле. Музыка молчит, статистика готовит нож.'
+      ]),
       recipient: 'Все игроки',
-      tone: 'safe'
+      tone: 'safe',
+      weight: 50,
+      createdAt: Math.max(...answers.map((player) => player.lastAnswer.responseMs))
     });
   }
 
-  return achievements.slice(0, 3);
+  const distribution = optionDistribution(answers);
+  const topOption = distribution[0];
+  const secondOption = distribution[1];
+  if (topOption && room.players.size >= 3 && topOption.count >= Math.max(3, Math.ceil(answers.length * 0.6))) {
+    achievements.push({
+      id: `live-majority-${question.id}-${topOption.optionId}`,
+      icon: '👥',
+      title: 'Единое мнение',
+      description: pickVariant(`live-majority-${question.id}-${topOption.optionId}`, [
+        'Толпа собралась вокруг одного варианта. История учит ничему.',
+        'Большинство решило одинаково. Смело, опасно, коллективно.',
+        'Командный разум включился. Качество разума пока неизвестно.'
+      ]),
+      recipient: 'Большинство',
+      tone: 'chaos',
+      weight: 56,
+      createdAt: Math.max(...answers.filter((player) => player.lastAnswer.optionId === topOption.optionId).map((player) => player.lastAnswer.responseMs))
+    });
+  }
+  if (topOption && secondOption && answers.length >= 4 && topOption.count - secondOption.count <= 1 && topOption.count + secondOption.count >= answers.length * 0.75) {
+    achievements.push({
+      id: `live-split-${question.id}`,
+      icon: '⚔',
+      title: 'Раскол общества',
+      description: pickVariant(`live-split-${question.id}`, [
+        'Комната раскололась. Осталось понять, какая половина позорится.',
+        'Два лагеря, одна песня, ноль гарантий.',
+        'Игроки устроили гражданскую войну на кнопках.'
+      ]),
+      recipient: 'Комната',
+      tone: 'chaos',
+      weight: 54,
+      createdAt: Math.max(...answers.map((player) => player.lastAnswer.responseMs))
+    });
+  }
+
+  return selectAchievements(achievements, 8);
 }
 
 function buildRevealAchievements(room: Room): Achievement[] {
   const answers = [...room.players.values()].filter((player): player is Player & { lastAnswer: PlayerAnswerResult } => Boolean(player.lastAnswer));
   const correct = answers.filter((player) => player.lastAnswer.isCorrect);
-  const achievements: Achievement[] = [];
+  const achievements: ScoredAchievement[] = [];
   const round = room.currentQuestion?.round ?? room.round;
 
   if (correct.length === 0) {
@@ -604,9 +712,14 @@ function buildRevealAchievements(room: Room): Achievement[] {
       id: `reveal-empty-${round}`,
       icon: '💀',
       title: 'Коллективный промах',
-      description: 'Никто не угадал. Трек победил людей.',
+      description: pickVariant(`reveal-empty-${round}`, [
+        'Никто не угадал. Трек победил людей.',
+        'Комната проиграла музыке всухую.',
+        'Все мимо. Зато единство коллектива на месте.'
+      ]),
       recipient: 'Никто',
-      tone: 'bad'
+      tone: 'bad',
+      weight: 72
     });
   }
 
@@ -615,9 +728,14 @@ function buildRevealAchievements(room: Room): Achievement[] {
       id: `reveal-only-${round}-${correct[0].id}`,
       icon: '🎯',
       title: 'Один в поле угадал',
-      description: `${correct[0].name} вытащил раунд, пока остальные слушали другой плейлист.`,
+      description: pickVariant(`reveal-only-${round}-${correct[0].id}`, [
+        `${correct[0].name} вытащил раунд, пока остальные слушали другой плейлист.`,
+        `${correct[0].name} единственный понял, что вообще происходит.`,
+        `${correct[0].name} спас честь комнаты. Комната не помогала.`
+      ]),
       recipient: correct[0].name,
-      tone: 'good'
+      tone: 'good',
+      weight: 76
     });
   }
 
@@ -626,10 +744,68 @@ function buildRevealAchievements(room: Room): Achievement[] {
     achievements.push({
       id: `reveal-fast-${round}-${fastest.id}`,
       icon: '⚡',
-      title: 'Узнал с пол-ноты',
-      description: `${fastest.name}: ${formatSeconds(fastest.lastAnswer.responseMs)} сек до правильного ответа.`,
+      title: fastest.lastAnswer.responseMs <= 1_000 ? 'Это вообще законно?' : 'Узнал с пол-ноты',
+      description: fastest.lastAnswer.responseMs <= 1_000
+        ? pickVariant(`reveal-fast-extreme-${round}-${fastest.id}`, [
+            `${fastest.name} угадал за ${formatSeconds(fastest.lastAnswer.responseMs)} сек. Трек, похоже, начался у него раньше.`,
+            `${fastest.name} нажал быстрее, чем остальные поняли, что идет игра.`,
+            `${fastest.name} подключился напрямую к плейлисту.`
+          ])
+        : `${fastest.name}: ${formatSeconds(fastest.lastAnswer.responseMs)} сек до правильного ответа.`,
       recipient: fastest.name,
-      tone: 'good'
+      tone: 'good',
+      weight: fastest.lastAnswer.responseMs <= 1_000 ? 88 : 62
+    });
+  }
+
+  const leftCorrect = answers.find((player) => player.lastAnswer.answerEvents.some((event) => event.optionId === room.currentQuestion?.correctOptionId) && !player.lastAnswer.isCorrect);
+  if (leftCorrect) {
+    achievements.push({
+      id: `reveal-left-correct-${round}-${leftCorrect.id}`,
+      icon: '🤡',
+      title: 'Я так и хотел',
+      description: pickVariant(`reveal-left-correct-${round}-${leftCorrect.id}`, [
+        `${leftCorrect.name} нашел правильный ответ и бережно его отпустил.`,
+        `${leftCorrect.name} был прав, но решил не давить интеллектом.`,
+        `${leftCorrect.name} передумал ровно там, где надо было не думать.`
+      ]),
+      recipient: leftCorrect.name,
+      tone: 'bad',
+      weight: 92
+    });
+  }
+
+  const fastWrong = answers.filter((player) => !player.lastAnswer.isCorrect && player.lastAnswer.firstResponseMs <= 1_500).sort((a, b) => a.lastAnswer.firstResponseMs - b.lastAnswer.firstResponseMs)[0];
+  if (fastWrong) {
+    achievements.push({
+      id: `reveal-fast-wrong-${round}-${fastWrong.id}`,
+      icon: '💀',
+      title: 'Уши декоративные',
+      description: pickVariant(`reveal-fast-wrong-${round}-${fastWrong.id}`, [
+        `${fastWrong.name} ошибся быстрее, чем трек успел объясниться.`,
+        `${fastWrong.name} нажал мгновенно. Музыка была против.`,
+        `${fastWrong.name} услышал что-то свое и сразу поверил.`
+      ]),
+      recipient: fastWrong.name,
+      tone: 'bad',
+      weight: 82
+    });
+  }
+
+  const steadyWrong = answers.find((player) => !player.lastAnswer.isCorrect && player.lastAnswer.answerChanges === 0);
+  if (steadyWrong) {
+    achievements.push({
+      id: `reveal-steady-wrong-${round}-${steadyWrong.id}`,
+      icon: '🗿',
+      title: 'План надежный',
+      description: pickVariant(`reveal-steady-wrong-${round}-${steadyWrong.id}`, [
+        `${steadyWrong.name} выбрал один вариант и уверенно ушел не туда.`,
+        `${steadyWrong.name} не переобувался. Просто стабильно ошибся.`,
+        `${steadyWrong.name} доверился первому ответу. Ответ доверие не оценил.`
+      ]),
+      recipient: steadyWrong.name,
+      tone: 'bad',
+      weight: 74
     });
   }
 
@@ -637,11 +813,35 @@ function buildRevealAchievements(room: Room): Achievement[] {
   if (changedCorrect) {
     achievements.push({
       id: `reveal-change-good-${round}-${changedCorrect.id}`,
-      icon: '🧠',
-      title: 'Переобулся удачно',
-      description: `${changedCorrect.name} сменил ответ и всё-таки попал. Мозг загрузился не сразу.`,
+      icon: changedCorrect.lastAnswer.answerChanges >= 2 ? '🎰' : '🧠',
+      title: changedCorrect.lastAnswer.answerChanges >= 2 ? 'Да ладно нахрен' : 'Переобулся удачно',
+      description: changedCorrect.lastAnswer.answerChanges >= 2
+        ? pickVariant(`reveal-change-good-many-${round}-${changedCorrect.id}`, [
+            `${changedCorrect.name} сменил ответ ${changedCorrect.lastAnswer.answerChanges} раз и каким-то образом попал.`,
+            `${changedCorrect.name} устроил хаос на кнопках, и хаос ответил взаимностью.`,
+            `${changedCorrect.name} доказал, что стратегия для слабых.`
+          ])
+        : `${changedCorrect.name} сменил ответ и всё-таки попал. Мозг загрузился не сразу.`,
       recipient: changedCorrect.name,
-      tone: 'good'
+      tone: 'good',
+      weight: changedCorrect.lastAnswer.answerChanges >= 2 ? 84 : 66
+    });
+  }
+
+  const lastSecondCorrect = correct.find((player) => player.lastAnswer.answerChanges > 0 && player.lastAnswer.lastResponseMs >= (room.currentQuestion?.durationMs ?? 0) - 2_000);
+  if (lastSecondCorrect) {
+    achievements.push({
+      id: `reveal-last-second-correct-${round}-${lastSecondCorrect.id}`,
+      icon: '🧠',
+      title: 'Последняя рабочая извилина',
+      description: pickVariant(`reveal-last-second-correct-${round}-${lastSecondCorrect.id}`, [
+        `${lastSecondCorrect.name} включил мозг на последнем гарантийном дыхании.`,
+        `${lastSecondCorrect.name} передумал в последний момент и спас лицо.`,
+        `${lastSecondCorrect.name} почти проиграл таймеру, но успел украсть правильный ответ.`
+      ]),
+      recipient: lastSecondCorrect.name,
+      tone: 'good',
+      weight: 90
     });
   }
 
@@ -653,13 +853,18 @@ function buildRevealAchievements(room: Room): Achievement[] {
       id: `reveal-change-chaos-${round}-${biggestPenalty.id}`,
       icon: '🔁',
       title: 'Руки быстрее мозга',
-      description: `${biggestPenalty.name} сменил ответ ${biggestPenalty.lastAnswer.answerChanges} раз. Интерфейс выдержал.`,
+      description: pickVariant(`reveal-change-chaos-${round}-${biggestPenalty.id}`, [
+        `${biggestPenalty.name} сменил ответ ${biggestPenalty.lastAnswer.answerChanges} раз. Интерфейс выдержал, счет нет.`,
+        `${biggestPenalty.name} нажимал много, думал мало, получил честно.`,
+        `${biggestPenalty.name} устроил шоу на кнопках и сам же купил билет.`
+      ]),
       recipient: biggestPenalty.name,
-      tone: biggestPenalty.lastAnswer.points < 0 ? 'bad' : 'chaos'
+      tone: biggestPenalty.lastAnswer.points < 0 ? 'bad' : 'chaos',
+      weight: biggestPenalty.lastAnswer.points < 0 ? 80 : 68
     });
   }
 
-  return uniqueAchievements(achievements).slice(0, 4);
+  return selectAchievements(achievements, 5);
 }
 
 function createRoundHistoryEntry(room: Room, question: QuestionInternal): RoundHistoryEntry {
@@ -671,17 +876,28 @@ function createRoundHistoryEntry(room: Room, question: QuestionInternal): RoundH
       .map((player) => ({
         playerId: player.id,
         playerName: player.name,
+        optionId: player.lastAnswer.optionId,
+        firstOptionId: player.lastAnswer.firstOptionId,
+        previousOptionId: player.lastAnswer.previousOptionId,
         isCorrect: player.lastAnswer.isCorrect,
         responseMs: player.lastAnswer.responseMs,
+        firstResponseMs: player.lastAnswer.firstResponseMs,
+        lastResponseMs: player.lastAnswer.lastResponseMs,
         points: player.lastAnswer.points,
-        answerChanges: player.lastAnswer.answerChanges
+        answerChanges: player.lastAnswer.answerChanges,
+        answerEvents: player.lastAnswer.answerEvents,
+        wasOnCorrectAnswer: player.lastAnswer.answerEvents.some((event) => event.optionId === question.correctOptionId),
+        leftCorrectAnswer: player.lastAnswer.answerEvents.some((event) => event.optionId === question.correctOptionId) && !player.lastAnswer.isCorrect,
+        changedToCorrectAnswer: player.lastAnswer.firstOptionId !== question.correctOptionId && player.lastAnswer.isCorrect
       }))
   };
 }
 
 function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
-  const candidates: MatchMoment[] = [];
+  const candidates: ScoredMoment[] = [];
   const allAnswers = history.flatMap((round) => round.answers.map((answer) => ({ ...answer, round: round.round, trackTitle: round.trackTitle })));
+  const playerIds = new Set(allAnswers.map((answer) => answer.playerId));
+  const limit = finalMomentLimit(playerIds.size);
   const correct = allAnswers.filter((answer) => answer.isCorrect);
   const fastest = [...correct].sort((a, b) => a.responseMs - b.responseMs)[0];
   const best = [...allAnswers].sort((a, b) => b.points - a.points)[0];
@@ -689,16 +905,55 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
   const mostChanges = [...allAnswers].filter((answer) => answer.answerChanges > 0).sort((a, b) => b.answerChanges - a.answerChanges)[0];
   const onlyCorrectRound = history.find((round) => round.answers.filter((answer) => answer.isCorrect).length === 1 && round.answers.length > 1);
   const noCorrectRound = history.find((round) => round.answers.length > 0 && round.answers.every((answer) => !answer.isCorrect));
+  const playerStats = buildPlayerStats(allAnswers, history.length);
+  const winner = [...playerStats].sort((a, b) => b.totalPoints - a.totalPoints || b.correct - a.correct)[0];
+  const loser = [...playerStats].sort((a, b) => a.totalPoints - b.totalPoints || a.correct - b.correct)[0];
+  const bestAccuracy = [...playerStats].filter((player) => player.rounds > 0 && player.correct / player.rounds >= 0.8).sort((a, b) => b.correct / b.rounds - a.correct / a.rounds)[0];
+  const zeroCorrect = [...playerStats].filter((player) => player.correct === 0 && player.rounds > 0).sort((a, b) => a.totalPoints - b.totalPoints)[0];
+  const npc = [...playerStats].filter((player) => player.majorityPicks >= Math.max(2, Math.ceil(player.rounds * 0.6))).sort((a, b) => b.majorityPicks - a.majorityPicks)[0];
+  const suspicious = longestFastCorrectStreak(allAnswers);
+  const confidentWrong = longestFastWrongStreak(allAnswers);
+  const lastRound = history.at(-1);
+  const lateWinner = winner && lastRound?.answers.some((answer) => answer.playerId === winner.playerId && answer.points > 0) && history.length > 1 ? winner : undefined;
 
+  if (winner) {
+    const leaderGap = winner.totalPoints - ([...playerStats].sort((a, b) => b.totalPoints - a.totalPoints)[1]?.totalPoints ?? winner.totalPoints);
+    candidates.push({
+      id: `moment-winner-${winner.playerId}`,
+      round: history.length,
+      icon: '🏆',
+      title: leaderGap >= 1_500 ? 'Потный ублюдок' : 'Невыносимый тип',
+      description:
+        leaderGap >= 1_500
+          ? pickVariant(`moment-sweaty-${winner.playerId}`, [
+              `${winner.playerName} выиграл с таким отрывом, что это уже не игра, а допрос.`,
+              `${winner.playerName} пришел не веселиться, а закрывать статистику.`,
+              `${winner.playerName} оставил остальным только моральную победу.`
+            ])
+          : pickVariant(`moment-winner-${winner.playerId}`, [
+              `${winner.playerName} выиграл матч. Противно, но заслуженно.`,
+              `${winner.playerName} забрал первое место и остатки уважения.`,
+              `${winner.playerName} пришел портить вечер и справился.`
+            ]),
+      recipient: winner.playerName,
+      tone: 'good',
+      weight: leaderGap >= 1_500 ? 100 : 78
+    });
+  }
   if (fastest) {
     candidates.push({
       id: `moment-fast-${fastest.round}-${fastest.playerId}`,
       round: fastest.round,
-      icon: '⚡',
-      title: 'Самый быстрый палец',
-      description: `${fastest.playerName} угадал "${fastest.trackTitle}" за ${formatSeconds(fastest.responseMs)} сек.`,
+      icon: '🚨',
+      title: 'Подозрительный тип',
+      description: pickVariant(`moment-fast-${fastest.round}-${fastest.playerId}`, [
+        `${fastest.playerName} слишком часто угадывал слишком быстро. Мы просто наблюдаем.`,
+        `${fastest.playerName} играет так, будто видел плейлист до матча.`,
+        `${fastest.playerName} нажимал быстро и правильно. Неприятное сочетание.`
+      ]),
       recipient: fastest.playerName,
-      tone: 'good'
+      tone: 'good',
+      weight: suspicious && suspicious.playerId === fastest.playerId ? 92 : 70
     });
   }
   if (best) {
@@ -709,7 +964,8 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
       title: 'Лучший удар раунда',
       description: `${best.playerName} забрал ${formatSignedScore(best.points)} на "${best.trackTitle}".`,
       recipient: best.playerName,
-      tone: best.points > 0 ? 'good' : 'bad'
+      tone: best.points > 0 ? 'good' : 'bad',
+      weight: 58
     });
   }
   if (onlyCorrectRound) {
@@ -721,29 +977,40 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
       title: 'Один против всех',
       description: `${answer.playerName} единственный понял, что играет "${onlyCorrectRound.trackTitle}".`,
       recipient: answer.playerName,
-      tone: 'good'
+      tone: 'good',
+      weight: 76
     });
   }
   if (penalty) {
     candidates.push({
       id: `moment-penalty-${penalty.round}-${penalty.playerId}`,
       round: penalty.round,
-      icon: '🔁',
-      title: 'Перевыбор года',
-      description: `${penalty.playerName} дощёлкал до ${formatSignedScore(penalty.points)}. Зато не скучно.`,
+      icon: '🦧',
+      title: 'Консилиум не помог',
+      description: pickVariant(`moment-penalty-${penalty.round}-${penalty.playerId}`, [
+        `${penalty.playerName} перепробовал все подходы и все равно приехал вниз.`,
+        `${penalty.playerName} устроил мозговой штурм одного человека. Пострадал счет.`,
+        `${penalty.playerName} нажимал за троих, попадал за никого.`
+      ]),
       recipient: penalty.playerName,
-      tone: 'bad'
+      tone: 'bad',
+      weight: 96
     });
   }
   if (mostChanges) {
     candidates.push({
       id: `moment-change-${mostChanges.round}-${mostChanges.playerId}`,
       round: mostChanges.round,
-      icon: '🌀',
-      title: 'Крутил рулетку',
-      description: `${mostChanges.playerName} сменил ответ ${mostChanges.answerChanges} раз за один раунд.`,
+      icon: '🔄',
+      title: 'Переобувается на лету',
+      description: pickVariant(`moment-change-${mostChanges.round}-${mostChanges.playerId}`, [
+        `${mostChanges.playerName} сменил больше всех ответов. Принципов нет, статистика есть.`,
+        `${mostChanges.playerName} переобувался так часто, что лобби стало гардеробом.`,
+        `${mostChanges.playerName} не выбирал ответы, он проводил кастинг.`
+      ]),
       recipient: mostChanges.playerName,
-      tone: 'chaos'
+      tone: 'chaos',
+      weight: 72
     });
   }
   if (noCorrectRound) {
@@ -754,14 +1021,272 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
       title: 'Раунд без свидетелей',
       description: `"${noCorrectRound.trackTitle}" не угадал никто. Даже трек удивился.`,
       recipient: 'Никто',
-      tone: 'bad'
+      tone: 'bad',
+      weight: 72
+    });
+  }
+  if (loser && playerStats.length > 1) {
+    candidates.push({
+      id: `moment-loser-${loser.playerId}`,
+      round: history.length,
+      icon: '🚪',
+      title: 'Можешь идти',
+      description: pickVariant(`moment-loser-${loser.playerId}`, [
+        `${loser.playerName} занял последнее место. Дверь не закрыта.`,
+        `${loser.playerName} завершил матч так, будто играл без звука.`,
+        `${loser.playerName} показал, что участие действительно главное.`
+      ]),
+      recipient: loser.playerName,
+      tone: 'bad',
+      weight: 78
+    });
+  }
+  if (zeroCorrect) {
+    candidates.push({
+      id: `moment-zero-${zeroCorrect.playerId}`,
+      round: history.length,
+      icon: '💀',
+      title: 'Братан, ты как тут оказался',
+      description: pickVariant(`moment-zero-${zeroCorrect.playerId}`, [
+        `${zeroCorrect.playerName} не угадал ни разу. Зато был рядом.`,
+        `${zeroCorrect.playerName} прошел матч без контакта с реальностью.`,
+        `${zeroCorrect.playerName} доказал, что музыка бывает фоном.`
+      ]),
+      recipient: zeroCorrect.playerName,
+      tone: 'bad',
+      weight: 98
+    });
+  }
+  if (bestAccuracy) {
+    candidates.push({
+      id: `moment-accuracy-${bestAccuracy.playerId}`,
+      round: history.length,
+      icon: '🤓',
+      title: 'Слишком много свободного времени',
+      description: pickVariant(`moment-accuracy-${bestAccuracy.playerId}`, [
+        `${bestAccuracy.playerName} слишком часто угадывал. Это уже биография, а не игра.`,
+        `${bestAccuracy.playerName} знает подозрительно много треков. Вопросы есть.`,
+        `${bestAccuracy.playerName} слушал музыку вместо нормальной жизни.`
+      ]),
+      recipient: bestAccuracy.playerName,
+      tone: 'good',
+      weight: 82
+    });
+  }
+  if (npc) {
+    candidates.push({
+      id: `moment-npc-${npc.playerId}`,
+      round: history.length,
+      icon: '🐑',
+      title: 'NPC',
+      description: pickVariant(`moment-npc-${npc.playerId}`, [
+        `${npc.playerName} шел за толпой так уверенно, будто там квестовая метка.`,
+        `${npc.playerName} выбирал вместе с большинством. Индивидуальность отложена.`,
+        `${npc.playerName} доверял коллективному разуму. Смелый эксперимент.`
+      ]),
+      recipient: npc.playerName,
+      tone: 'chaos',
+      weight: 74
+    });
+  }
+  if (confidentWrong) {
+    candidates.push({
+      id: `moment-confident-wrong-${confidentWrong.playerId}`,
+      round: confidentWrong.round,
+      icon: '🗣',
+      title: 'Главное уверенность',
+      description: pickVariant(`moment-confident-wrong-${confidentWrong.playerId}`, [
+        `${confidentWrong.playerName} ошибался быстро и с характером.`,
+        `${confidentWrong.playerName} уверенно нажимал не туда несколько раундов подряд.`,
+        `${confidentWrong.playerName} доказал, что скорость без смысла тоже скорость.`
+      ]),
+      recipient: confidentWrong.playerName,
+      tone: 'bad',
+      weight: 84
+    });
+  }
+  if (lateWinner) {
+    candidates.push({
+      id: `moment-steal-${lateWinner.playerId}`,
+      round: history.length,
+      icon: '💸',
+      title: 'Украл катку',
+      description: pickVariant(`moment-steal-${lateWinner.playerId}`, [
+        `${lateWinner.playerName} забрал первое место в последнем раунде. Воровство оформлено.`,
+        `${lateWinner.playerName} подождал весь матч и украл финальную табличку.`,
+        `${lateWinner.playerName} сделал камбэк, после которого хочется пересчитать очки.`
+      ]),
+      recipient: lateWinner.playerName,
+      tone: 'chaos',
+      weight: 90
     });
   }
 
-  return uniqueMoments(candidates).slice(0, 5);
+  return selectMoments(candidates, limit);
 }
 
-function uniqueAchievements(achievements: Achievement[]): Achievement[] {
+function buildAnswerChangeChain(questionId: string, player: Player & { lastAnswer: PlayerAnswerResult }): ScoredAchievement[] {
+  const chainId = `${questionId}-answer-changes-${player.id}`;
+  const steps = [
+    {
+      threshold: 1,
+      title: 'Переобулся в воздухе',
+      description: [
+        `${player.name} сменил ответ. Минус очки, плюс драма.`,
+        `${player.name} передумал. Пока без паники, но мы записали.`,
+        `${player.name} аккуратно начал карьеру переобувателя.`
+      ],
+      weight: 60
+    },
+    {
+      threshold: 2,
+      title: 'Куда жмем, командир?',
+      description: [
+        `${player.name} сменил ответ второй раз. План становится объемным.`,
+        `${player.name} уже не выбирает, а ведет переговоры с кнопками.`,
+        `${player.name} попробовал еще один вариант. Вдруг музыка оценит.`
+      ],
+      weight: 70
+    },
+    {
+      threshold: 3,
+      title: 'Паническая закупка',
+      description: [
+        `${player.name} скупает варианты, пока таймер терпит.`,
+        `${player.name} устроил распродажу уверенности.`,
+        `${player.name} нажимает так, будто один из вариантов сдастся.`
+      ],
+      weight: 80
+    },
+    {
+      threshold: 5,
+      title: 'Руки живут отдельно',
+      description: [
+        `${player.name} больше не управляет процессом. Процесс управляет им.`,
+        `${player.name} довел интерфейс до собеседования в психотерапию.`,
+        `${player.name} нажал уже достаточно, чтобы игра запомнила лицо.`
+      ],
+      weight: 92
+    }
+  ];
+
+  return steps
+    .filter((step) => player.lastAnswer.answerChanges >= step.threshold)
+    .map((step, index) => ({
+      id: `live-change-${questionId}-${player.id}-${step.threshold}`,
+      icon: '↔',
+      title: step.title,
+      description: pickVariant(`live-change-${questionId}-${player.id}-${step.threshold}`, step.description),
+      recipient: player.name,
+      tone: 'chaos',
+      chainId,
+      chainStep: index + 1,
+      chainTotal: steps.length,
+      weight: step.weight,
+      createdAt: player.lastAnswer.answerEvents[Math.min(step.threshold, player.lastAnswer.answerEvents.length - 1)]?.responseMs ?? player.lastAnswer.responseMs
+    }));
+}
+
+function optionDistribution(answers: Array<Player & { lastAnswer: PlayerAnswerResult }>): Array<{ optionId: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const player of answers) {
+    counts.set(player.lastAnswer.optionId, (counts.get(player.lastAnswer.optionId) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([optionId, count]) => ({ optionId, count })).sort((a, b) => b.count - a.count);
+}
+
+function selectAchievements(achievements: ScoredAchievement[], limit: number): Achievement[] {
+  return uniqueAchievements(achievements)
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0) || b.weight - a.weight)
+    .slice(0, limit)
+    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
+    .map(({ weight: _weight, createdAt: _createdAt, ...achievement }) => achievement);
+}
+
+function selectMoments(moments: ScoredMoment[], limit: number): MatchMoment[] {
+  const selected = uniqueMoments(moments)
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, limit);
+  const roundedLength = Math.floor(selected.length / 3) * 3;
+  return selected
+    .slice(0, roundedLength || selected.length)
+    .map(({ weight: _weight, ...moment }) => moment);
+}
+
+function finalMomentLimit(playerCount: number): number {
+  if (playerCount <= 10) {
+    return 9;
+  }
+  return Math.min(24, Math.max(9, Math.ceil(playerCount / 5) * 3));
+}
+
+function buildPlayerStats(allAnswers: Array<RoundHistoryAnswer & { round: number; trackTitle: string }>, totalRounds: number) {
+  const majorityByRound = new Map<number, string | undefined>();
+  for (const round of new Set(allAnswers.map((answer) => answer.round))) {
+    const answers = allAnswers.filter((answer) => answer.round === round);
+    const counts = new Map<string, number>();
+    for (const answer of answers) {
+      counts.set(answer.optionId, (counts.get(answer.optionId) ?? 0) + 1);
+    }
+    majorityByRound.set(round, [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]);
+  }
+
+  const stats = new Map<string, { playerId: string; playerName: string; totalPoints: number; correct: number; rounds: number; changes: number; majorityPicks: number }>();
+  for (const answer of allAnswers) {
+    const current =
+      stats.get(answer.playerId) ??
+      { playerId: answer.playerId, playerName: answer.playerName, totalPoints: 0, correct: 0, rounds: totalRounds, changes: 0, majorityPicks: 0 };
+    current.totalPoints += answer.points;
+    current.correct += answer.isCorrect ? 1 : 0;
+    current.changes += answer.answerChanges;
+    current.majorityPicks += majorityByRound.get(answer.round) === answer.optionId ? 1 : 0;
+    stats.set(answer.playerId, current);
+  }
+  return [...stats.values()];
+}
+
+function longestFastCorrectStreak(allAnswers: Array<RoundHistoryAnswer & { round: number }>): (RoundHistoryAnswer & { round: number }) | undefined {
+  return longestStreak(allAnswers, (answer) => answer.isCorrect && answer.responseMs <= 2_000);
+}
+
+function longestFastWrongStreak(allAnswers: Array<RoundHistoryAnswer & { round: number }>): (RoundHistoryAnswer & { round: number }) | undefined {
+  return longestStreak(allAnswers, (answer) => !answer.isCorrect && answer.firstResponseMs <= 2_000);
+}
+
+function longestStreak(
+  allAnswers: Array<RoundHistoryAnswer & { round: number }>,
+  predicate: (answer: RoundHistoryAnswer & { round: number }) => boolean
+): (RoundHistoryAnswer & { round: number }) | undefined {
+  const byPlayer = new Map<string, Array<RoundHistoryAnswer & { round: number }>>();
+  for (const answer of allAnswers) {
+    byPlayer.set(answer.playerId, [...(byPlayer.get(answer.playerId) ?? []), answer]);
+  }
+
+  let best: (RoundHistoryAnswer & { round: number; streak: number }) | undefined;
+  for (const answers of byPlayer.values()) {
+    let streak = 0;
+    for (const answer of answers.sort((a, b) => a.round - b.round)) {
+      streak = predicate(answer) ? streak + 1 : 0;
+      if (streak >= 2 && (!best || streak > best.streak)) {
+        best = { ...answer, streak };
+      }
+    }
+  }
+  return best;
+}
+
+function pickVariant(key: string, variants: string[]): string {
+  if (variants.length === 0) {
+    return '';
+  }
+  let hash = 0;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash * 31 + key.charCodeAt(index)) >>> 0;
+  }
+  return variants[hash % variants.length];
+}
+
+function uniqueAchievements<T extends Achievement>(achievements: T[]): T[] {
   const seen = new Set<string>();
   return achievements.filter((achievement) => {
     const key = achievement.title;
@@ -773,7 +1298,7 @@ function uniqueAchievements(achievements: Achievement[]): Achievement[] {
   });
 }
 
-function uniqueMoments(moments: MatchMoment[]): MatchMoment[] {
+function uniqueMoments<T extends MatchMoment>(moments: T[]): T[] {
   const seen = new Set<string>();
   return moments.filter((moment) => {
     const key = moment.title;

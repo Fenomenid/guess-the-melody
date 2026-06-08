@@ -548,17 +548,61 @@ describe('GameEngine', () => {
     expect(revealed.achievements.some((achievement) => achievement.title === 'Переобулся удачно')).toBe(true);
   });
 
-  it('publishes up to five final match moments', () => {
+  it('publishes live escalation achievements with chain metadata', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { allowAnswerChange: true });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    const options = question.options.map((option) => option.id);
+
+    for (let index = 0; index < 6; index += 1) {
+      engine.submitAnswer('ROOM42', 'host', options[index % options.length], 2000 + index * 100);
+    }
+
+    const liveRoom = engine.getPublicRoom('ROOM42');
+    const changeChain = liveRoom.achievements.filter((achievement) => achievement.chainId?.includes('answer-changes-host'));
+
+    expect(liveRoom.achievements.length).toBeLessThanOrEqual(8);
+    expect(changeChain.map((achievement) => achievement.title)).toEqual([
+      'Переобулся в воздухе',
+      'Куда жмем, командир?',
+      'Паническая закупка',
+      'Руки живут отдельно'
+    ]);
+    expect(changeChain.map((achievement) => achievement.chainStep)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('detects leaving the correct answer after reveal', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { allowAnswerChange: true });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    const wrongOption = question.options.find((option) => option.id !== question.correctOptionId)!;
+
+    engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 2000);
+    engine.submitAnswer('ROOM42', 'host', wrongOption.id, 3000);
+    const revealed = engine.revealRound('ROOM42');
+
+    expect(revealed.achievements.some((achievement) => achievement.title === 'Я так и хотел')).toBe(true);
+  });
+
+  it('publishes adaptive final match moments in groups of three', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    for (let index = 1; index <= 17; index += 1) {
+      engine.joinRoom('ROOM42', { playerId: `p${index}`, playerName: `Player ${index}` });
+    }
     engine.updateSettings('ROOM42', { rounds: 1 });
     const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
 
-    engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 2000);
+    for (const player of engine.getPublicRoom('ROOM42').players) {
+      engine.submitAnswer('ROOM42', player.id, question.correctOptionId, 2000);
+    }
     const finalRoom = engine.revealRound('ROOM42');
 
     expect(finalRoom.status).toBe('finished');
     expect(finalRoom.matchMoments.length).toBeGreaterThan(0);
-    expect(finalRoom.matchMoments.length).toBeLessThanOrEqual(5);
+    expect(finalRoom.matchMoments.length).toBeLessThanOrEqual(12);
+    expect(finalRoom.matchMoments.length % 3).toBe(0);
   });
 });

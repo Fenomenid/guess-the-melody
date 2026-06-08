@@ -37,6 +37,24 @@ type Theme = {
   source: 'demo' | 'yandex';
 };
 
+type AnswerEvent = {
+  optionId: string;
+  responseMs: number;
+};
+
+type PlayerAnswerResult = {
+  optionId: string;
+  firstOptionId: string;
+  previousOptionId?: string;
+  isCorrect: boolean;
+  responseMs: number;
+  firstResponseMs: number;
+  lastResponseMs: number;
+  points: number;
+  answerChanges: number;
+  answerEvents: AnswerEvent[];
+};
+
 type Player = {
   id: string;
   name: string;
@@ -44,7 +62,7 @@ type Player = {
   correctAnswers: number;
   connected: boolean;
   isHost: boolean;
-  lastAnswer?: { hasAnswered: true; responseMs: number; answerChanges: number } | { optionId: string; isCorrect: boolean; responseMs: number; points: number; answerChanges: number };
+  lastAnswer?: { hasAnswered: true; responseMs: number; firstResponseMs: number; lastResponseMs: number; answerChanges: number } | PlayerAnswerResult;
 };
 
 type Achievement = {
@@ -54,6 +72,9 @@ type Achievement = {
   description: string;
   recipient?: string;
   tone: 'safe' | 'good' | 'bad' | 'chaos';
+  chainId?: string;
+  chainStep?: number;
+  chainTotal?: number;
 };
 
 type MatchMoment = Achievement & {
@@ -126,7 +147,7 @@ type ConfirmDialogState = {
 
 type AppMode = 'normal' | 'display' | 'player';
 
-function hasRevealedAnswer(player: Player): player is Player & { lastAnswer: { optionId: string; isCorrect: boolean; responseMs: number; points: number; answerChanges: number } } {
+function hasRevealedAnswer(player: Player): player is Player & { lastAnswer: PlayerAnswerResult } {
   return Boolean(player.lastAnswer && 'optionId' in player.lastAnswer);
 }
 
@@ -707,8 +728,6 @@ function App() {
               selectedOptionId={selectedOptionId}
               volume={volume}
               audioRef={audioRef}
-              answeredCount={answeredCount}
-              playerCount={playerCount}
               onSubmit={submitAnswer}
             />
           )}
@@ -1294,7 +1313,7 @@ function DisplayRoom({
           )}
           {room.status === 'preparing' && <PreparingStage />}
           {room.status === 'question' && room.currentQuestion && (
-            <DisplayQuestionStage room={room} volume={volume} audioRef={audioRef} answeredCount={answeredCount} playerCount={playerCount} />
+            <DisplayQuestionStage room={room} volume={volume} audioRef={audioRef} />
           )}
           {(room.status === 'round-result' || room.status === 'finished') && (
             <ResultStage room={room} isHost={false} playerId="" emit={noopEmit} onResetToLobby={onResetToLobby} />
@@ -1320,15 +1339,11 @@ function QrJoinCard({ roomCode, url }: { roomCode: string; url: string }) {
 function DisplayQuestionStage({
   room,
   volume,
-  audioRef,
-  answeredCount,
-  playerCount
+  audioRef
 }: {
   room: Room;
   volume: number;
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
-  answeredCount: number;
-  playerCount: number;
 }) {
   const question = room.currentQuestion!;
   const countdown = useQuestionCountdown(question, room.serverTime);
@@ -1364,7 +1379,6 @@ function DisplayQuestionStage({
       <div className="round-header round-topline">
         <span>{room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}</span>
         <span>{answerModePrompt(room.settings.answerMode)}</span>
-        <span className="answered-pill">Ответили {answeredCount}/{playerCount}</span>
       </div>
       <div className="music-visual">
         <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
@@ -1820,8 +1834,6 @@ function QuestionStage({
   selectedOptionId,
   volume,
   audioRef,
-  answeredCount,
-  playerCount,
   onSubmit
 }: {
   room: Room;
@@ -1829,8 +1841,6 @@ function QuestionStage({
   selectedOptionId: string;
   volume: number;
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
-  answeredCount: number;
-  playerCount: number;
   onSubmit: (optionId: string) => void;
 }) {
   const question = room.currentQuestion!;
@@ -1870,7 +1880,6 @@ function QuestionStage({
           {room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}
         </span>
         <span>{me?.lastAnswer ? 'Ответ принят' : answerModePrompt(room.settings.answerMode)}</span>
-        <span className="answered-pill">Ответили {answeredCount}/{playerCount}</span>
       </div>
       <div className="music-visual">
         <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
@@ -2088,7 +2097,7 @@ function AchievementShelf({ achievements, title = 'Ачивки', compact = fals
       </div>
       <div className="achievement-list">
         {achievements.map((achievement) => (
-          <article className={`achievement-card ${achievement.tone}`} key={achievement.id}>
+          <article className={['achievement-card', achievement.tone, achievement.chainStep && achievement.chainStep > 1 ? 'chained' : ''].filter(Boolean).join(' ')} key={achievement.id}>
             <AchievementIcon achievement={achievement} />
             <div>
               <strong>{achievement.title}</strong>

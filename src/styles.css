@@ -1395,6 +1395,7 @@ select:focus {
 }
 
 .achievement-card {
+  position: relative;
   min-height: 72px;
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
@@ -1405,6 +1406,33 @@ select:focus {
   border-radius: 8px;
   color: var(--text);
   background: color-mix(in srgb, var(--surface) 74%, transparent);
+}
+
+.achievement-card.chained {
+  margin-left: 14px;
+}
+
+.achievement-card.chained::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: -10px;
+  bottom: 50%;
+  width: 14px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  border-bottom-left-radius: 8px;
+  opacity: 0.82;
+}
+
+.achievement-shelf.compact .achievement-card.chained {
+  margin-left: 12px;
+}
+
+.achievement-shelf.compact .achievement-card.chained::before {
+  left: -12px;
+  top: -8px;
+  width: 12px;
 }
 
 .achievement-card.good {
