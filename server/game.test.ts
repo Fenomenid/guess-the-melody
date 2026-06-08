@@ -543,7 +543,7 @@ describe('GameEngine', () => {
     const liveRoom = engine.getPublicRoom('ROOM42');
     const revealed = engine.revealRound('ROOM42');
 
-    expect(liveRoom.achievements.some((achievement) => achievement.title === 'Первый на кнопке')).toBe(true);
+    expect(liveRoom.achievements.some((achievement) => achievement.id.startsWith('live-first-'))).toBe(true);
     expect(liveRoom.players[0].lastAnswer).toMatchObject({ hasAnswered: true, answerChanges: 1 });
     expect(revealed.achievements.some((achievement) => achievement.title === 'Переобулся удачно')).toBe(true);
   });
@@ -563,12 +563,7 @@ describe('GameEngine', () => {
     const changeChain = liveRoom.achievements.filter((achievement) => achievement.chainId?.includes('answer-changes-host'));
 
     expect(liveRoom.achievements.length).toBeLessThanOrEqual(8);
-    expect(changeChain.map((achievement) => achievement.title)).toEqual([
-      'Переобулся в воздухе',
-      'Куда жмем, командир?',
-      'Паническая закупка',
-      'Руки живут отдельно'
-    ]);
+    expect(changeChain).toHaveLength(4);
     expect(changeChain.map((achievement) => achievement.chainStep)).toEqual([1, 2, 3, 4]);
   });
 

@@ -2162,6 +2162,10 @@ select:focus {
     max-width: none;
   }
 
+  .achievement-shelf.compact .compact-description {
+    display: none;
+  }
+
   .question-players-panel {
     padding: 0;
     border: 0;

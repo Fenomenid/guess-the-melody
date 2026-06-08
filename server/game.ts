@@ -586,7 +586,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
     achievements.push({
       id: `live-first-${question.id}-${first.id}`,
       icon: '⚡',
-      title: 'Первый на кнопке',
+      title: pickVariant(`live-first-title-${question.id}-${first.id}`, ['Первый на кнопке', 'Палец быстрее трека', 'Подключен напрямую']),
       description: pickVariant(`live-first-${question.id}-${first.id}`, [
         `${first.name} уже ткнул вариант. Уверенность или паника?`,
         `${first.name} нажал первым. Остальные еще слушают заставку.`,
@@ -607,7 +607,9 @@ function buildLiveAchievements(room: Room): Achievement[] {
     achievements.push({
       id: `live-second-${question.id}-${second.id}`,
       icon: '⚡',
-      title: closeToFirst ? 'Почти киберспорт' : 'Серебряный тык',
+      title: closeToFirst
+        ? pickVariant(`live-second-close-title-${question.id}-${second.id}`, ['Почти киберспорт', 'Дышит в спину', 'На волоске'])
+        : pickVariant(`live-second-title-${question.id}-${second.id}`, ['Серебряный тык', 'Почти украл момент', 'Второй, но быстрый']),
       description: closeToFirst
         ? pickVariant(`live-second-close-${question.id}-${second.id}`, [
             `${second.name} дышит в спину лидеру. Неприятно близко.`,
@@ -639,7 +641,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
     achievements.push({
       id: `live-late-${question.id}-${late.id}`,
       icon: '⏱',
-      title: 'На последней секунде',
+      title: pickVariant(`live-late-title-${question.id}-${late.id}`, ['На последней секунде', 'Проснулся', 'Таймер уже уходил']),
       description: pickVariant(`live-late-${question.id}-${late.id}`, [
         `${late.name} нажал так поздно, что таймер уже попрощался.`,
         `${late.name} думал как взрослый. Или просто завис.`,
@@ -659,7 +661,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
     achievements.push({
       id: `live-all-${question.id}`,
       icon: '✓',
-      title: 'Все в деле',
+      title: pickVariant(`live-all-title-${question.id}`, ['Все в деле', 'Кнопки нажаты', 'Репутации на кону']),
       description: pickVariant(`live-all-${question.id}`, [
         'Все ответили. Теперь узнаем, кто зря был таким уверенным.',
         'Кнопки нажаты, репутации поставлены на кон.',
@@ -682,7 +684,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
     achievements.push({
       id: `live-majority-${question.id}-${topOption.optionId}`,
       icon: '👥',
-      title: 'Единое мнение',
+      title: pickVariant(`live-majority-title-${question.id}-${topOption.optionId}`, ['Единое мнение', 'Стадо сформировано', 'Командный разум']),
       description: pickVariant(`live-majority-${question.id}-${topOption.optionId}`, [
         'Толпа собралась вокруг одного варианта. История учит ничему.',
         'Большинство решило одинаково. Смело, опасно, коллективно.',
@@ -701,7 +703,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
     achievements.push({
       id: `live-split-${question.id}`,
       icon: '⚔',
-      title: 'Раскол общества',
+      title: pickVariant(`live-split-title-${question.id}`, ['Раскол общества', 'Два лагеря', 'Гражданская война']),
       description: pickVariant(`live-split-${question.id}`, [
         'Комната раскололась. Осталось понять, какая половина позорится.',
         'Два лагеря, одна песня, ноль гарантий.',
@@ -1149,7 +1151,7 @@ function buildAnswerChangeChain(questionId: string, player: Player & { lastAnswe
   const steps = [
     {
       threshold: 1,
-      title: 'Переобулся в воздухе',
+      title: pickVariant(`live-change-title-${questionId}-${player.id}-1`, ['Переобулся в воздухе', 'Первый разворот', 'Мнение обновлено']),
       description: [
         `${player.name} сменил ответ. Минус очки, плюс драма.`,
         `${player.name} передумал. Пока без паники, но мы записали.`,
@@ -1162,7 +1164,7 @@ function buildAnswerChangeChain(questionId: string, player: Player & { lastAnswe
     },
     {
       threshold: 2,
-      title: 'Куда жмем, командир?',
+      title: pickVariant(`live-change-title-${questionId}-${player.id}-2`, ['Куда жмем, командир?', 'Навигатор сломался', 'Второй разворот']),
       description: [
         `${player.name} сменил ответ второй раз. План становится объемным.`,
         `${player.name} уже не выбирает, а ведет переговоры с кнопками.`,
@@ -1175,7 +1177,7 @@ function buildAnswerChangeChain(questionId: string, player: Player & { lastAnswe
     },
     {
       threshold: 3,
-      title: 'Паническая закупка',
+      title: pickVariant(`live-change-title-${questionId}-${player.id}-3`, ['Паническая закупка', 'Дегустация ответов', 'Аудит кнопок']),
       description: [
         `${player.name} скупает варианты, пока таймер терпит.`,
         `${player.name} устроил распродажу уверенности.`,
@@ -1188,7 +1190,7 @@ function buildAnswerChangeChain(questionId: string, player: Player & { lastAnswe
     },
     {
       threshold: 5,
-      title: 'Руки живут отдельно',
+      title: pickVariant(`live-change-title-${questionId}-${player.id}-5`, ['Руки живут отдельно', 'Режим шаманства', 'Стресс-тест кнопок']),
       description: [
         `${player.name} больше не управляет процессом. Процесс управляет им.`,
         `${player.name} довел интерфейс до собеседования в психотерапию.`,
