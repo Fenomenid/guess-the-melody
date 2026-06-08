@@ -935,6 +935,33 @@ function Lobby({
             </button>
           </div>
         </label>
+        <div className="settings-subgroup wide-field">
+          <div className="settings-subgroup-title">Дополнительно</div>
+          <label className={['setting-toggle', room.settings.allowAnswerChange ? 'active' : ''].filter(Boolean).join(' ')}>
+            <input
+              type="checkbox"
+              disabled={!isHost || isBusy}
+              checked={room.settings.allowAnswerChange}
+              onChange={(event) => onSettingsChange({ allowAnswerChange: event.target.checked })}
+            />
+            <span>
+              <strong>Можно менять ответ</strong>
+              <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
+            </span>
+          </label>
+          <label className={['setting-toggle', room.settings.autoNextRound ? 'active' : ''].filter(Boolean).join(' ')}>
+            <input
+              type="checkbox"
+              disabled={!isHost || isBusy}
+              checked={room.settings.autoNextRound}
+              onChange={(event) => onSettingsChange({ autoNextRound: event.target.checked })}
+            />
+            <span>
+              <strong>Автозапуск следующего раунда</strong>
+              <small>После результата следующий раунд стартует сам. Выключите, если нужна пауза между раундами.</small>
+            </span>
+          </label>
+        </div>
         <label className="field wide-field">
           <span>Плейлисты</span>
           <div className="playlist-input-grid">
@@ -1141,33 +1168,6 @@ function Lobby({
                 ? `Выбрано тем: ${selectedThemeIds.length}`
                 : themes.find((theme) => theme.id === selectedThemeIds[0])?.description ?? 'Треки подбираются из Яндекс Музыки'}
           </span>
-        </div>
-        <div className="settings-subgroup wide-field">
-          <div className="settings-subgroup-title">Дополнительно</div>
-          <label className={['setting-toggle', room.settings.allowAnswerChange ? 'active' : ''].filter(Boolean).join(' ')}>
-            <input
-              type="checkbox"
-              disabled={!isHost || isBusy}
-              checked={room.settings.allowAnswerChange}
-              onChange={(event) => onSettingsChange({ allowAnswerChange: event.target.checked })}
-            />
-            <span>
-              <strong>Можно менять ответ</strong>
-              <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
-            </span>
-          </label>
-          <label className={['setting-toggle', room.settings.autoNextRound ? 'active' : ''].filter(Boolean).join(' ')}>
-            <input
-              type="checkbox"
-              disabled={!isHost || isBusy}
-              checked={room.settings.autoNextRound}
-              onChange={(event) => onSettingsChange({ autoNextRound: event.target.checked })}
-            />
-            <span>
-              <strong>Автозапуск следующего раунда</strong>
-              <small>После результата следующий раунд стартует сам. Выключите, если нужна пауза между раундами.</small>
-            </span>
-          </label>
         </div>
           </div>
         </details>
