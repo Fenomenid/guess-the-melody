@@ -91,6 +91,18 @@ button {
   -webkit-user-select: none;
 }
 
+summary,
+.theme-choice,
+.setting-toggle,
+.difficulty-toggle,
+.playlist-item,
+.playlist-search-item,
+.room-actions-menu,
+.players-collapse {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
