@@ -2108,8 +2108,9 @@ function AchievementShelf({ achievements, title = 'Ачивки', compact = fals
             <AchievementIcon achievement={achievement} />
             <div>
               <strong>{achievement.title}</strong>
-              {compact && achievement.recipient && <small className="achievement-recipient">{achievement.recipient}</small>}
-              {!compact && <small>{achievement.description}</small>}
+              <small className={compact ? 'achievement-description compact-description' : 'achievement-description'}>
+                {achievement.description}
+              </small>
             </div>
           </article>
         ))}
