@@ -1486,6 +1486,8 @@ function PlayerRoom({
             selectedOptionId={selectedOptionId}
             volume={volume}
             audioRef={audioRef}
+            answeredCount={room.players.filter((player) => Boolean(player.lastAnswer)).length}
+            playerCount={room.players.length}
             onAudioNeedsGestureChange={onAudioNeedsGestureChange}
             onSubmit={onSubmit}
           />
@@ -1540,6 +1542,8 @@ function PlayerQuestionStage({
   selectedOptionId,
   volume,
   audioRef,
+  answeredCount,
+  playerCount,
   onAudioNeedsGestureChange,
   onSubmit
 }: {
@@ -1548,6 +1552,8 @@ function PlayerQuestionStage({
   selectedOptionId: string;
   volume: number;
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
+  answeredCount: number;
+  playerCount: number;
   onAudioNeedsGestureChange: (needsGesture: boolean) => void;
   onSubmit: (optionId: string) => void;
 }) {
@@ -1597,6 +1603,7 @@ function PlayerQuestionStage({
       <div className="round-header round-topline">
         <span>{room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}</span>
         <span>{hasAnswered ? 'Ответ принят' : answerModePrompt(room.settings.answerMode)}</span>
+        <span className="answered-pill mobile-answered-pill">Ответили {answeredCount}/{playerCount}</span>
       </div>
       {isAnswerLocked && <div className="notice player-answer-notice">Ответ принят. Ждем остальных игроков.</div>}
       <div className="answers player-answers">

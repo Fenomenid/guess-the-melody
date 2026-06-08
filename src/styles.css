@@ -1409,30 +1409,45 @@ select:focus {
 }
 
 .achievement-card.chained {
-  margin-left: 14px;
+  margin-left: 18px;
 }
 
 .achievement-card.chained::before {
   content: "";
   position: absolute;
-  left: -14px;
-  top: -10px;
-  bottom: 50%;
-  width: 14px;
-  border-left: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
-  border-bottom: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
-  border-bottom-left-radius: 8px;
-  opacity: 0.82;
+  left: -18px;
+  top: 50%;
+  width: 16px;
+  height: 2px;
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+  transform: translateY(-50%);
+  opacity: 0.9;
+}
+
+.achievement-card.chained::after {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
+  border-right: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
+  transform: translateY(-50%) rotate(45deg);
+  opacity: 0.9;
 }
 
 .achievement-shelf.compact .achievement-card.chained {
-  margin-left: 12px;
+  margin-left: 22px;
 }
 
 .achievement-shelf.compact .achievement-card.chained::before {
-  left: -12px;
-  top: -8px;
-  width: 12px;
+  left: -22px;
+  width: 20px;
+}
+
+.achievement-shelf.compact .achievement-card.chained::after {
+  left: -8px;
 }
 
 .achievement-card.good {
