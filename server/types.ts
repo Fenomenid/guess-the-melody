@@ -84,7 +84,7 @@ export type Achievement = {
   title: string;
   description: string;
   recipient?: string;
-  tone: 'safe' | 'good' | 'bad' | 'chaos';
+  tone: 'safe' | 'good' | 'bad' | 'chaos' | 'rare';
   chainId?: string;
   chainStep?: number;
   chainTotal?: number;

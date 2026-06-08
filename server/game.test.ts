@@ -637,4 +637,56 @@ describe('GameEngine', () => {
     expect(finalRoom.matchMoments.length).toBeLessThanOrEqual(12);
     expect(finalRoom.matchMoments.length % 3).toBe(0);
   });
+
+  it('publishes the stolen game moment only when the last round changes the leader', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.joinRoom('ROOM42', { playerId: 'guest', playerName: 'Guest' });
+    engine.joinRoom('ROOM42', { playerId: 'third', playerName: 'Third' });
+    engine.updateSettings('ROOM42', { rounds: 2 });
+
+    const firstQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    const firstWrongOption = firstQuestion.options.find((option) => option.id !== firstQuestion.correctOptionId)!;
+    engine.submitAnswer('ROOM42', 'host', firstQuestion.correctOptionId, 3000);
+    engine.submitAnswer('ROOM42', 'guest', firstQuestion.correctOptionId, 7000);
+    engine.submitAnswer('ROOM42', 'third', firstWrongOption.id, 2500);
+    engine.revealRound('ROOM42');
+
+    const finalQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 20_000);
+    const finalWrongOption = finalQuestion.options.find((option) => option.id !== finalQuestion.correctOptionId)!;
+    engine.submitAnswer('ROOM42', 'guest', finalQuestion.correctOptionId, 21_000);
+    engine.submitAnswer('ROOM42', 'host', finalWrongOption.id, 22_000);
+    engine.submitAnswer('ROOM42', 'third', finalWrongOption.id, 22_500);
+    const finalRoom = engine.revealRound('ROOM42');
+    const stealMomentIndex = finalRoom.matchMoments.findIndex((moment) => moment.id === 'moment-steal-guest');
+
+    expect(finalRoom.status).toBe('finished');
+    expect(stealMomentIndex).toBe(0);
+    expect(finalRoom.matchMoments[stealMomentIndex]).toMatchObject({ recipient: 'Guest', tone: 'rare' });
+  });
+
+  it('does not publish the stolen game moment when the winner was already leading before the last round', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.joinRoom('ROOM42', { playerId: 'guest', playerName: 'Guest' });
+    engine.joinRoom('ROOM42', { playerId: 'third', playerName: 'Third' });
+    engine.updateSettings('ROOM42', { rounds: 2 });
+
+    const firstQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    const firstWrongOption = firstQuestion.options.find((option) => option.id !== firstQuestion.correctOptionId)!;
+    engine.submitAnswer('ROOM42', 'host', firstQuestion.correctOptionId, 2000);
+    engine.submitAnswer('ROOM42', 'guest', firstQuestion.correctOptionId, 7000);
+    engine.submitAnswer('ROOM42', 'third', firstWrongOption.id, 2500);
+    engine.revealRound('ROOM42');
+
+    const finalQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 20_000);
+    const finalWrongOption = finalQuestion.options.find((option) => option.id !== finalQuestion.correctOptionId)!;
+    engine.submitAnswer('ROOM42', 'host', finalQuestion.correctOptionId, 21_000);
+    engine.submitAnswer('ROOM42', 'guest', finalWrongOption.id, 22_000);
+    engine.submitAnswer('ROOM42', 'third', finalWrongOption.id, 22_500);
+    const finalRoom = engine.revealRound('ROOM42');
+
+    expect(finalRoom.status).toBe('finished');
+    expect(finalRoom.matchMoments.some((moment) => moment.id.startsWith('moment-steal-'))).toBe(false);
+  });
 });

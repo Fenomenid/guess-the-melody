@@ -935,7 +935,11 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
   const suspicious = longestFastCorrectStreak(allAnswers);
   const confidentWrong = longestFastWrongStreak(allAnswers);
   const lastRound = history.at(-1);
-  const lateWinner = winner && lastRound?.answers.some((answer) => answer.playerId === winner.playerId && answer.points > 0) && history.length > 1 ? winner : undefined;
+  const comebackWinner = history.length > 1 ? winnerFromPenultimateBeforeLastRound(history, winner?.playerId) : undefined;
+  const lateWinner =
+    winner && comebackWinner && lastRound?.answers.some((answer) => answer.playerId === winner.playerId && answer.points > 0)
+      ? winner
+      : undefined;
 
   if (winner) {
     const leaderGap = winner.totalPoints - ([...playerStats].sort((a, b) => b.totalPoints - a.totalPoints)[1]?.totalPoints ?? winner.totalPoints);
@@ -1138,8 +1142,8 @@ function buildMatchMoments(history: RoundHistoryEntry[]): MatchMoment[] {
         `${lateWinner.playerName} сделал камбэк, после которого хочется пересчитать очки.`
       ]),
       recipient: lateWinner.playerName,
-      tone: 'chaos',
-      weight: 90
+      tone: 'rare',
+      weight: 140
     });
   }
 
@@ -1276,6 +1280,21 @@ function buildPlayerStats(allAnswers: Array<RoundHistoryAnswer & { round: number
     stats.set(answer.playerId, current);
   }
   return [...stats.values()];
+}
+
+function winnerFromPenultimateBeforeLastRound(history: RoundHistoryEntry[], winnerId?: string): { playerId: string; playerName: string } | undefined {
+  if (!winnerId) {
+    return undefined;
+  }
+  const previousRounds = history.slice(0, -1);
+  const previousAnswers = previousRounds.flatMap((round) => round.answers.map((answer) => ({ ...answer, round: round.round, trackTitle: round.trackTitle })));
+  const standings = [...buildPlayerStats(previousAnswers, previousRounds.length)].sort((a, b) => b.totalPoints - a.totalPoints || b.correct - a.correct);
+  if (standings.length < 3) {
+    return undefined;
+  }
+
+  const previousRank = standings.findIndex((player) => player.playerId === winnerId);
+  return previousRank === standings.length - 2 ? standings[previousRank] : undefined;
 }
 
 function longestFastCorrectStreak(allAnswers: Array<RoundHistoryAnswer & { round: number }>): (RoundHistoryAnswer & { round: number }) | undefined {

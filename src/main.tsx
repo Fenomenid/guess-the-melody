@@ -71,7 +71,7 @@ type Achievement = {
   title: string;
   description: string;
   recipient?: string;
-  tone: 'safe' | 'good' | 'bad' | 'chaos';
+  tone: 'safe' | 'good' | 'bad' | 'chaos' | 'rare';
   chainId?: string;
   chainStep?: number;
   chainTotal?: number;
@@ -2171,10 +2171,15 @@ function AchievementShelf({
 
 function compactAchievementDescription(achievement: Achievement): string {
   const genericRecipients = new Set(['Все игроки', 'Большинство', 'Комната', 'Никто']);
-  if (!achievement.recipient || genericRecipients.has(achievement.recipient) || achievement.description.includes(achievement.recipient)) {
+  if (!achievement.recipient || genericRecipients.has(achievement.recipient)) {
     return achievement.description;
   }
-  return `${achievement.recipient}: ${achievement.description}`;
+  const recipientPattern = new RegExp(`^${escapeRegExp(achievement.recipient)}\\s*[:—-]?\\s*`, 'i');
+  return `${achievement.recipient}: ${achievement.description.replace(recipientPattern, '')}`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function MatchMoments({ moments }: { moments: MatchMoment[] }) {

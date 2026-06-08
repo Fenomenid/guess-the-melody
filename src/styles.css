@@ -1490,6 +1490,16 @@ select:focus {
   background: var(--gold-soft);
 }
 
+.achievement-card.rare {
+  border-color: color-mix(in srgb, var(--gold) 72%, white);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--gold-soft) 88%, var(--surface)), color-mix(in srgb, var(--gold) 28%, var(--surface))),
+    var(--gold-soft);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--gold) 38%, transparent),
+    0 10px 26px color-mix(in srgb, var(--gold) 22%, transparent);
+}
+
 .achievement-icon {
   position: relative;
   width: 42px;
@@ -1534,6 +1544,16 @@ select:focus {
   background:
     radial-gradient(circle at 26% 22%, rgba(255, 255, 255, 0.95), transparent 18%),
     linear-gradient(135deg, color-mix(in srgb, var(--gold) 62%, white), var(--gold) 48%, var(--accent));
+}
+
+.achievement-icon.rare {
+  color: var(--text-strong);
+  background:
+    radial-gradient(circle at 26% 22%, rgba(255, 255, 255, 0.95), transparent 18%),
+    linear-gradient(135deg, #fff0a8, var(--gold) 48%, #8a5f17);
+  box-shadow:
+    inset 0 -7px 14px rgba(80, 48, 0, 0.22),
+    0 8px 22px color-mix(in srgb, var(--gold) 42%, transparent);
 }
 
 .achievement-shelf.compact .achievement-icon {
