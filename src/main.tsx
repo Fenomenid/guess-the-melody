@@ -2326,7 +2326,7 @@ function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, se
 }
 
 function useAutoNextCountdown(status: Room['status'], round: number, enabled = true): number {
-  const [secondsLeft, setSecondsLeft] = useState(5);
+  const [secondsLeft, setSecondsLeft] = useState(10);
 
   useEffect(() => {
     if (status !== 'round-result' || !enabled) {
@@ -2335,10 +2335,10 @@ function useAutoNextCountdown(status: Room['status'], round: number, enabled = t
     }
 
     const startedAt = Date.now();
-    setSecondsLeft(5);
+    setSecondsLeft(10);
     const interval = window.setInterval(() => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-      setSecondsLeft(Math.max(0, 5 - elapsed));
+      setSecondsLeft(Math.max(0, 10 - elapsed));
     }, 250);
 
     return () => window.clearInterval(interval);

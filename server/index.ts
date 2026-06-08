@@ -3,6 +3,7 @@ import express from 'express';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { Server } from 'socket.io';
+import { AudioCache } from './audioCache';
 import { GameEngine } from './game';
 import { MusicService } from './music';
 import { RoomStore } from './roomStore';
@@ -20,9 +21,11 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST']
   }
 });
+const audioCacheMaxBytes = parsePositiveInteger(process.env.AUDIO_CACHE_MAX_BYTES, 8_000_000);
 
 const engine = new GameEngine();
 const music = new MusicService();
+const audioCache = new AudioCache({ maxBytes: audioCacheMaxBytes });
 const roomStore = new RoomStore();
 const roomTracks = new Map<string, Track[]>();
 const roomOptionTracks = new Map<string, TrackMetadata[]>();
@@ -82,6 +85,22 @@ app.get('/api/music/probe', async (request, response) => {
   } catch (error) {
     response.status(502).json({ error: toClientError(error) });
   }
+});
+
+app.get('/api/audio/:id', (request, response) => {
+  const id = request.params.id;
+  if (!/^[a-f0-9-]{36}$/i.test(id)) {
+    response.status(404).end();
+    return;
+  }
+
+  const cached = audioCache.read(id, request.headers.range);
+  if (!cached) {
+    response.status(404).end();
+    return;
+  }
+
+  response.status(cached.status).set(cached.headers).send(cached.body);
 });
 
 app.use(express.static(path.join(process.cwd(), 'dist')));
@@ -178,7 +197,8 @@ io.on('connection', (socket) => {
           optionLimit: shouldLoadInBackground ? INITIAL_OPTION_LIMIT : Math.max(220, plannedRounds * 18)
         }
       );
-      roomTracks.set(preparingRoom.code, shuffle(pool.playableTracks));
+      audioCache.clearRoom(preparingRoom.code);
+      roomTracks.set(preparingRoom.code, shuffle(await cacheRoomTrackAudio(preparingRoom.code, pool.playableTracks)));
       roomOptionTracks.set(preparingRoom.code, shuffle(pool.optionTracks));
       await startRound(preparingRoom.code);
       if (shouldLoadInBackground) {
@@ -233,6 +253,7 @@ io.on('connection', (socket) => {
         clearRoundTimer(result.deletedRoomCode);
         clearNextRoundTimer(result.deletedRoomCode);
         roomPoolLoadTokens.delete(result.deletedRoomCode);
+        audioCache.clearRoom(result.deletedRoomCode);
       }
     } catch (error) {
       callback?.({ error: toClientError(error) });
@@ -332,9 +353,37 @@ async function resetRoomToLobby(code: string): Promise<ReturnType<GameEngine['re
   const room = engine.resetToLobby(code);
   roomTracks.delete(room.code);
   roomOptionTracks.delete(room.code);
+  audioCache.clearRoom(room.code);
   nextPoolLoadToken(room.code);
   await persistRooms();
   return room;
+}
+
+async function cacheRoomTrackAudio(code: string, tracks: Track[]): Promise<Track[]> {
+  const cachedTracks: Track[] = [];
+  const batchSize = 4;
+  for (let index = 0; index < tracks.length; index += batchSize) {
+    const batch = tracks.slice(index, index + batchSize);
+    const results = await Promise.all(
+      batch.map(async (track) => {
+        try {
+          return {
+            ...track,
+            audioUrl: await audioCache.cacheTrackAudio(code, track.audioUrl)
+          };
+        } catch (error) {
+          console.warn(`[audio] failed to cache ${track.id} for ${code.toUpperCase()}: ${toClientError(error)}`);
+          return undefined;
+        }
+      })
+    );
+    cachedTracks.push(...results.filter((track): track is Track => Boolean(track)));
+  }
+
+  if (cachedTracks.length < 4) {
+    throw new Error('Could not cache enough playable audio tracks');
+  }
+  return cachedTracks;
 }
 
 async function hydrateRoomTrackPool(
@@ -359,7 +408,8 @@ async function hydrateRoomTrackPool(
 
     const currentTracks = roomTracks.get(room.code) ?? [];
     const currentOptions = roomOptionTracks.get(room.code) ?? [];
-    roomTracks.set(room.code, shuffle(mergeUniqueById(currentTracks, pool.playableTracks)));
+    const cachedTracks = await cacheRoomTrackAudio(room.code, pool.playableTracks);
+    roomTracks.set(room.code, shuffle(mergeUniqueById(currentTracks, cachedTracks)));
     roomOptionTracks.set(room.code, shuffle(mergeUniqueByTitle(currentOptions, pool.optionTracks)));
     console.log(`[music] hydrated room ${room.code}: ${roomTracks.get(room.code)?.length ?? 0} playable tracks`);
   } catch (error) {
@@ -408,7 +458,7 @@ function scheduleNextRound(code: string): void {
       io.to(room.code).emit('room_state', engine.getPublicRoom(room.code));
       console.warn(toClientError(error));
     });
-  }, 5_000);
+  }, 10_000);
 
   nextRoundTimers.set(room.code, timer);
 }
@@ -513,6 +563,14 @@ function clampPage(value: number): number {
     return 0;
   }
   return Math.max(0, Math.min(20, Math.round(value)));
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.round(parsed);
 }
 
 function estimateRoundsForScore(targetScore: number): number {
