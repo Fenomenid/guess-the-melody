@@ -304,12 +304,8 @@ function App() {
     }
     if (appMode === 'display') {
       emit<Room>('view_room', { code: roomCodeFromUrl }, handleRoomState, 'Открываем экран ведущего');
-      return;
     }
-    if (playerName.trim()) {
-      emit<Room>('join_room', { code: roomCodeFromUrl, playerId, playerName: playerName.trim() }, handleRoomState, 'Входим в комнату');
-    }
-  }, [appMode, room, roomCodeFromUrl, playerId, playerName]);
+  }, [appMode, room, roomCodeFromUrl]);
 
   useEffect(() => {
     localStorage.setItem('volume', String(volume));
@@ -1245,7 +1241,18 @@ function PlayerJoinScreen({
         <h1>Войти в игру</h1>
         <label className="field">
           <span>Ваше имя</span>
-          <input value={playerName} onChange={(event) => onPlayerNameChange(event.target.value)} maxLength={32} placeholder="Например, Аня" />
+          <input
+            value={playerName}
+            onChange={(event) => onPlayerNameChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                onJoin();
+              }
+            }}
+            maxLength={32}
+            placeholder="Например, Аня"
+          />
         </label>
         <button className="primary" onClick={onJoin} disabled={isBusy}>
           <LogIn size={18} />
