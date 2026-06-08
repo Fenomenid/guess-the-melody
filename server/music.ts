@@ -32,6 +32,8 @@ type YandexPlaylist = {
   id?: string;
   title?: string;
   description?: string;
+  trackCount?: number;
+  tracksCount?: number;
   tracks?: Array<YandexTrack | YandexTrackShort>;
 };
 
@@ -54,6 +56,10 @@ type PlaylistResult = YandexPlaylist | { playlist?: YandexPlaylist };
 
 type AlbumResult = {
   volumes?: Array<Array<YandexTrack | YandexTrackShort>>;
+};
+
+type ArtistTracksResult = {
+  tracks?: YandexTrack[];
 };
 
 type StationTracksResult = {
@@ -607,6 +613,12 @@ export class MusicService {
       return extractTracks(result.volumes?.flat()).slice(0, 700);
     }
 
+    if (parsed.type === 'artist') {
+      const result = await this.get<ArtistTracksResult | YandexTrack[]>(`/artists/${parsed.id}/tracks`);
+      const tracks = Array.isArray(result) ? result : result.tracks;
+      return (tracks?.filter((track): track is YandexTrack => Boolean(track?.id && track.title)) ?? []).slice(0, 700);
+    }
+
     const result = await this.get<PlaylistResult>(`/users/${parsed.uid}/playlists/${parsed.kind}`);
     const playlist: YandexPlaylist = isPlaylistEnvelope(result) ? result.playlist : (result as YandexPlaylist);
     return extractTracks(playlist.tracks).slice(0, 700);
@@ -865,7 +877,7 @@ function isPlaylistEnvelope(value: PlaylistResult): value is { playlist: YandexP
   return 'playlist' in value && Boolean(value.playlist);
 }
 
-type ParsedPlaylistUrl = { type: 'user'; uid: string; kind: string } | { type: 'uuid'; uuid: string } | { type: 'album'; id: string };
+type ParsedPlaylistUrl = { type: 'user'; uid: string; kind: string } | { type: 'uuid'; uuid: string } | { type: 'album'; id: string } | { type: 'artist'; id: string };
 
 function parseYandexPlaylistUrl(value: string): ParsedPlaylistUrl | undefined {
   try {
@@ -874,6 +886,7 @@ function parseYandexPlaylistUrl(value: string): ParsedPlaylistUrl | undefined {
     const userIndex = parts.indexOf('users');
     const playlistIndex = parts.indexOf('playlists');
     const albumIndex = parts.indexOf('album');
+    const artistIndex = parts.indexOf('artist');
 
     if (userIndex >= 0 && playlistIndex === userIndex + 2 && parts[userIndex + 1] && parts[playlistIndex + 1]) {
       return {
@@ -894,6 +907,13 @@ function parseYandexPlaylistUrl(value: string): ParsedPlaylistUrl | undefined {
       return {
         type: 'album',
         id: decodeURIComponent(parts[albumIndex + 1])
+      };
+    }
+
+    if (artistIndex >= 0 && parts[artistIndex + 1] && (!parts[artistIndex + 2] || parts[artistIndex + 2] === 'tracks')) {
+      return {
+        type: 'artist',
+        id: decodeURIComponent(parts[artistIndex + 1])
       };
     }
   } catch {
@@ -937,7 +957,7 @@ function normalizePlaylistSources(sources?: PlaylistSource[], urls?: string[], u
   const playlistUrls = urls?.length ? urls : url ? [url] : [];
   return playlistUrls.slice(0, 10).map((playlistUrl, index) => ({
     url: playlistUrl,
-    name: /\/album\//i.test(playlistUrl) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`
+    name: /\/artist\//i.test(playlistUrl) ? `Исполнитель ${index + 1}` : /\/album\//i.test(playlistUrl) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`
   }));
 }
 
@@ -955,7 +975,8 @@ function uniquePlaylistSearchItems(playlists: YandexPlaylist[]): PlaylistSearchI
       id: String(playlist.playlistId ?? playlist.id ?? url),
       url,
       name: normalizeWhitespace(playlist.title) || `Плейлист ${items.length + 1}`,
-      description: normalizeWhitespace(playlist.description)?.slice(0, 140)
+      description: normalizeWhitespace(playlist.description)?.slice(0, 140),
+      trackCount: playlist.trackCount ?? playlist.tracksCount ?? playlist.tracks?.length
     });
   }
 

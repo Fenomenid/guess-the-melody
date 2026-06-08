@@ -515,6 +515,43 @@ describe('GameEngine', () => {
     expect(repeated).toMatchObject({ isCorrect: true, answerChanges: 1, points: 850, responseMs: 2000 });
   });
 
+  it('does not count repeated submits of the same option as reselection', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { allowAnswerChange: true });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+
+    const first = engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 2000);
+    const repeated = engine.submitAnswer('ROOM42', 'host', question.correctOptionId, 3000);
+
+    expect(repeated).toMatchObject({ answerChanges: 0, responseMs: first.responseMs });
+    expect(repeated.answerEvents).toHaveLength(1);
+  });
+
+  it('prefers answer options from the same playlist source when possible', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    const sourceUrl = 'https://music.yandex.ru/users/example/playlists/1000';
+    const otherSourceUrl = 'https://music.yandex.ru/users/example/playlists/2000';
+    const sourceTracks: Track[] = [
+      { id: 'source-1', title: 'Correct', artist: 'Artist A', audioUrl: 'https://example.test/1.mp3', sourceUrl },
+      { id: 'source-2', title: 'Same two', artist: 'Artist B', audioUrl: 'https://example.test/2.mp3', sourceUrl },
+      { id: 'source-3', title: 'Same three', artist: 'Artist C', audioUrl: 'https://example.test/3.mp3', sourceUrl },
+      { id: 'source-4', title: 'Same four', artist: 'Artist D', audioUrl: 'https://example.test/4.mp3', sourceUrl }
+    ];
+    const optionPool = [
+      ...sourceTracks,
+      { id: 'other-1', title: 'Other one', artist: 'Artist E', sourceUrl: otherSourceUrl },
+      { id: 'other-2', title: 'Other two', artist: 'Artist F', sourceUrl: otherSourceUrl },
+      { id: 'other-3', title: 'Other three', artist: 'Artist G', sourceUrl: otherSourceUrl }
+    ];
+
+    const question = engine.startNextRound('ROOM42', sourceTracks, optionPool, 10_000, 1000);
+    const sameSourceIds = new Set(sourceTracks.map((track) => track.id));
+
+    expect(question.options.every((option) => sameSourceIds.has(option.id))).toBe(true);
+  });
+
   it('caps answer change penalties', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });

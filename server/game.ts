@@ -1433,7 +1433,7 @@ function sanitizePlaylistSourceName(value: string | undefined, index: number, ur
 }
 
 function defaultPlaylistSourceName(url: string, index: number): string {
-  return /\/album\//i.test(url) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`;
+  return /\/artist\//i.test(url) ? `Исполнитель ${index + 1}` : /\/album\//i.test(url) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`;
 }
 
 function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
@@ -1524,7 +1524,13 @@ function selectDistractorTracks(
   const freshCandidates = candidates.filter((track) => !usedOptionLabels.has(normalizeTitle(answerOptionLabel(track, kind))));
   const pool = freshCandidates.length >= count ? freshCandidates : candidates;
   const sameScriptPool = pool.filter((track) => titleScriptBucket(answerOptionLabel(track, kind)) === titleScriptBucket(correctLabel));
-  return shuffle(sameScriptPool.length >= count ? sameScriptPool : pool).slice(0, count);
+  const scriptPool = sameScriptPool.length >= count ? sameScriptPool : pool;
+  const sameSourcePool = correctTrack.sourceUrl ? scriptPool.filter((track) => track.sourceUrl === correctTrack.sourceUrl) : [];
+  if (sameSourcePool.length >= count) {
+    return shuffle(sameSourcePool).slice(0, count);
+  }
+  const remainingPool = scriptPool.filter((track) => !sameSourcePool.some((sourceTrack) => sourceTrack.id === track.id));
+  return [...shuffle(sameSourcePool), ...shuffle(remainingPool)].slice(0, count);
 }
 
 function uniqueByOptionLabel<T extends TrackMetadata>(tracks: T[], kind: AnswerOptionKind): T[] {

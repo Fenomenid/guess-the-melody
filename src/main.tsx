@@ -89,6 +89,7 @@ type PlaylistSource = {
 type PlaylistSearchItem = PlaylistSource & {
   id: string;
   description?: string;
+  trackCount?: number;
 };
 
 type Room = {
@@ -447,6 +448,7 @@ function App() {
 
   function submitAnswer(optionId: string) {
     if (!room || (me?.lastAnswer && !room.settings.allowAnswerChange)) return;
+    if (selectedAnswer.questionId === room.currentQuestion?.id && selectedAnswer.optionId === optionId) return;
     setSelectedAnswer({ questionId: room.currentQuestion?.id ?? '', optionId });
     emit('submit_answer', { code: room.code, playerId, optionId }, undefined, 'Фиксируем ответ');
   }
@@ -1063,6 +1065,7 @@ function Lobby({
                     <div className="playlist-search-item" key={`${source.id}:${source.url}`}>
                       <div>
                         <strong>{source.name}</strong>
+                        {typeof source.trackCount === 'number' && <small>{source.trackCount} треков</small>}
                         {source.description && <small>{source.description}</small>}
                       </div>
                       <button
@@ -1559,7 +1562,8 @@ function PlayerQuestionStage({
 }) {
   const question = room.currentQuestion!;
   const hasAnswered = Boolean(me?.lastAnswer);
-  const isAnswerLocked = hasAnswered || Boolean(selectedOptionId);
+  const hasSubmitted = hasAnswered || Boolean(selectedOptionId);
+  const isAnswerLocked = hasSubmitted && !room.settings.allowAnswerChange;
 
   function playAudio() {
     const audio = audioRef.current;
@@ -1798,7 +1802,7 @@ function playerRoomUrl(code: string): string {
 }
 
 function defaultPlaylistSourceName(url: string, index: number): string {
-  return /\/album\//i.test(url) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`;
+  return /\/artist\//i.test(url) ? `Исполнитель ${index + 1}` : /\/album\//i.test(url) ? `Альбом ${index + 1}` : `Плейлист ${index + 1}`;
 }
 
 function toDigitsDraft(value: string): string {
@@ -1983,6 +1987,26 @@ function ResultStage({
         </div>
       )}
       <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact />
+      <div className="result-list round-result-list" aria-label="Очки раунда">
+        {room.players.map((player, index) => (
+          <div className="score-row" key={player.id}>
+            <span>{index === 0 ? <Crown size={18} /> : index + 1}</span>
+            <strong>
+              {player.name}
+              <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>
+                {selectedOptionTitle(player)}
+              </small>
+            </strong>
+            {hasRevealedAnswer(player) ? (
+              <b className={['score-pop', player.lastAnswer.points < 0 ? 'penalty' : ''].filter(Boolean).join(' ')}>
+                {formatSignedPoints(player.lastAnswer.points)}
+              </b>
+            ) : (
+              <small>0</small>
+            )}
+          </div>
+        ))}
+      </div>
       <div className="actions">
         {isHost && (
           <button className="primary" onClick={() => emit('next_round', { code: room.code, playerId }, undefined, 'Готовим следующий трек')}>

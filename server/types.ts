@@ -102,6 +102,7 @@ export type PlaylistSource = {
 export type PlaylistSearchItem = PlaylistSource & {
   id: string;
   description?: string;
+  trackCount?: number;
 };
 
 export type RoomSettings = {
