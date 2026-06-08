@@ -1401,6 +1401,14 @@ select:focus {
   line-height: 1.1;
 }
 
+.achievement-shelf.title-compact .achievement-card strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  line-height: 1.18;
+}
+
 .achievement-shelf.compact .achievement-card small {
   max-width: none;
   overflow: hidden;

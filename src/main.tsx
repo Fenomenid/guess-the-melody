@@ -1531,7 +1531,7 @@ function PlayerRoundResult({ room, me }: { room: Room; me?: Player }) {
           </div>
         </div>
       )}
-      <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact />
+      <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact compactMode="title" />
       <PlayersPanel room={room} players={room.players} playerId={me?.id ?? ''} isHost={false} isQuestionStage={false} answeredCount={room.players.filter((player) => Boolean(player.lastAnswer)).length} playerCount={room.players.length} onKickPlayer={() => undefined} />
     </div>
   );
@@ -1945,7 +1945,7 @@ function QuestionStage({
         ))}
       </div>
 
-      <AchievementShelf achievements={room.achievements} title="События" compact />
+      <AchievementShelf achievements={room.achievements} title="События" compact compactMode="description" />
 
     </div>
   );
@@ -1993,7 +1993,7 @@ function ResultStage({
           </div>
         </div>
       )}
-      <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact />
+      <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact compactMode="title" />
       <div className="result-list round-result-list" aria-label="Очки раунда">
         {room.players.map((player, index) => (
           <div className="score-row" key={player.id}>
@@ -2122,13 +2122,23 @@ function FinalStage({
   );
 }
 
-function AchievementShelf({ achievements, title = 'Ачивки', compact = false }: { achievements: Achievement[]; title?: string; compact?: boolean }) {
+function AchievementShelf({
+  achievements,
+  title = 'Ачивки',
+  compact = false,
+  compactMode = 'title'
+}: {
+  achievements: Achievement[];
+  title?: string;
+  compact?: boolean;
+  compactMode?: 'title' | 'description';
+}) {
   if (achievements.length === 0) {
     return null;
   }
 
   return (
-    <section className={['achievement-shelf', compact ? 'compact' : ''].filter(Boolean).join(' ')} aria-label={title}>
+    <section className={['achievement-shelf', compact ? 'compact' : '', compact ? `${compactMode}-compact` : ''].filter(Boolean).join(' ')} aria-label={title}>
       <div className="achievement-title">
         <Trophy size={16} />
         <span>{title}</span>
@@ -2138,8 +2148,13 @@ function AchievementShelf({ achievements, title = 'Ачивки', compact = fals
           <article className={['achievement-card', achievement.tone, achievement.chainStep && achievement.chainStep > 1 ? 'chained' : ''].filter(Boolean).join(' ')} key={achievement.id}>
             <AchievementIcon achievement={achievement} />
             <div>
-              {compact ? (
-                <strong className="compact-description">{achievement.description}</strong>
+              {compact && compactMode === 'description' ? (
+                <strong className="compact-description">{compactAchievementDescription(achievement)}</strong>
+              ) : compact ? (
+                <>
+                  <strong>{achievement.title}</strong>
+                  {achievement.recipient && <small className="achievement-recipient">{achievement.recipient}</small>}
+                </>
               ) : (
                 <>
                   <strong>{achievement.title}</strong>
@@ -2152,6 +2167,14 @@ function AchievementShelf({ achievements, title = 'Ачивки', compact = fals
       </div>
     </section>
   );
+}
+
+function compactAchievementDescription(achievement: Achievement): string {
+  const genericRecipients = new Set(['Все игроки', 'Большинство', 'Комната', 'Никто']);
+  if (!achievement.recipient || genericRecipients.has(achievement.recipient) || achievement.description.includes(achievement.recipient)) {
+    return achievement.description;
+  }
+  return `${achievement.recipient}: ${achievement.description}`;
 }
 
 function MatchMoments({ moments }: { moments: MatchMoment[] }) {
