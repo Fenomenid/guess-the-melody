@@ -250,6 +250,24 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('set_auto_next_round', async ({ code, playerId, enabled }: { code: string; playerId: string; enabled: boolean }, callback) => {
+    try {
+      requireSocketPlayer(socket.id, code, playerId);
+      engine.assertHost(code, playerId);
+      const room = engine.setAutoNextRound(code, enabled);
+      if (enabled) {
+        scheduleNextRound(room.code);
+      } else {
+        clearNextRoundTimer(room.code);
+      }
+      await persistRooms();
+      callback?.({ data: engine.getPublicRoom(room.code) });
+      io.to(room.code).emit('room_state', engine.getPublicRoom(room.code));
+    } catch (error) {
+      callback?.({ error: toClientError(error) });
+    }
+  });
+
   socket.on('reset_game', async ({ code, playerId }: { code: string; playerId: string }, callback) => {
     try {
       requireSocketPlayer(socket.id, code, playerId);
@@ -380,7 +398,7 @@ async function startRound(code: string): Promise<void> {
 function scheduleNextRound(code: string): void {
   clearNextRoundTimer(code);
   const room = engine.getPublicRoom(code);
-  if (room.status !== 'round-result') {
+  if (room.status !== 'round-result' || !room.settings.autoNextRound) {
     return;
   }
 
@@ -441,6 +459,7 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
     targetScore: typeof raw.targetScore === 'number' ? raw.targetScore : undefined,
     questionDurationMs: typeof raw.questionDurationMs === 'number' ? raw.questionDurationMs : undefined,
     allowAnswerChange: typeof raw.allowAnswerChange === 'boolean' ? raw.allowAnswerChange : undefined,
+    autoNextRound: typeof raw.autoNextRound === 'boolean' ? raw.autoNextRound : undefined,
     achievementsEnabled: typeof raw.achievementsEnabled === 'boolean' ? raw.achievementsEnabled : undefined
   };
 }

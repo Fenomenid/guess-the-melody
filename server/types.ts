@@ -102,6 +102,7 @@ export type RoomSettings = {
   targetScore: number;
   questionDurationMs: number;
   allowAnswerChange: boolean;
+  autoNextRound: boolean;
   achievementsEnabled: boolean;
 };
 

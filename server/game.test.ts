@@ -21,6 +21,7 @@ describe('GameEngine', () => {
     expect(room.settings.questionDurationMs).toBe(10_000);
     expect(room.settings.targetScore).toBe(10_000);
     expect(room.settings.answerMode).toBe('title');
+    expect(room.settings.autoNextRound).toBe(true);
     expect(room.settings.achievementsEnabled).toBe(true);
   });
 
@@ -252,6 +253,19 @@ describe('GameEngine', () => {
 
     expect(hardRoom.settings.difficulty).toBe('hard');
     expect(easyRoom.settings.difficulty).toBe('easy');
+  });
+
+  it('can pause automatic round starts between rounds', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.revealRound('ROOM42');
+
+    const paused = engine.setAutoNextRound('ROOM42', false).settings.autoNextRound;
+    const resumed = engine.setAutoNextRound('ROOM42', true).settings.autoNextRound;
+
+    expect(paused).toBe(false);
+    expect(resumed).toBe(true);
   });
 
   it('limits easy mode answer time to fifteen seconds', () => {

@@ -86,6 +86,7 @@ type Room = {
     targetScore: number;
     questionDurationMs: number;
     allowAnswerChange: boolean;
+    autoNextRound: boolean;
     achievementsEnabled: boolean;
   };
   players: Player[];
@@ -639,6 +640,14 @@ function App() {
           audioRef={audioRef}
           onStart={() => emit('start_game', { code: room.code, playerId }, undefined, 'Готовим треки Яндекс Музыки')}
           onResetGame={requestResetGame}
+          onAutoNextRoundToggle={() =>
+            emit<Room>(
+              'set_auto_next_round',
+              { code: room.code, playerId, enabled: !room.settings.autoNextRound },
+              undefined,
+              room.settings.autoNextRound ? 'Ставим паузу между раундами' : 'Включаем автозапуск раундов'
+            )
+          }
           onAudioNeedsGestureChange={setAudioNeedsGesture}
           onSettingsChange={updateSettings}
           onSubmit={submitAnswer}
@@ -926,18 +935,6 @@ function Lobby({
             </button>
           </div>
         </label>
-        <label className={['setting-toggle wide-field', room.settings.allowAnswerChange ? 'active' : ''].filter(Boolean).join(' ')}>
-          <input
-            type="checkbox"
-            disabled={!isHost || isBusy}
-            checked={room.settings.allowAnswerChange}
-            onChange={(event) => onSettingsChange({ allowAnswerChange: event.target.checked })}
-          />
-          <span>
-            <strong>Можно менять ответ</strong>
-            <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
-          </span>
-        </label>
         <label className="field wide-field">
           <span>Плейлисты</span>
           <div className="playlist-input-grid">
@@ -1144,6 +1141,33 @@ function Lobby({
                 ? `Выбрано тем: ${selectedThemeIds.length}`
                 : themes.find((theme) => theme.id === selectedThemeIds[0])?.description ?? 'Треки подбираются из Яндекс Музыки'}
           </span>
+        </div>
+        <div className="settings-subgroup wide-field">
+          <div className="settings-subgroup-title">Дополнительно</div>
+          <label className={['setting-toggle', room.settings.allowAnswerChange ? 'active' : ''].filter(Boolean).join(' ')}>
+            <input
+              type="checkbox"
+              disabled={!isHost || isBusy}
+              checked={room.settings.allowAnswerChange}
+              onChange={(event) => onSettingsChange({ allowAnswerChange: event.target.checked })}
+            />
+            <span>
+              <strong>Можно менять ответ</strong>
+              <small>Игрок может исправить мисклик до конца раунда. Засчитывается последний выбранный вариант.</small>
+            </span>
+          </label>
+          <label className={['setting-toggle', room.settings.autoNextRound ? 'active' : ''].filter(Boolean).join(' ')}>
+            <input
+              type="checkbox"
+              disabled={!isHost || isBusy}
+              checked={room.settings.autoNextRound}
+              onChange={(event) => onSettingsChange({ autoNextRound: event.target.checked })}
+            />
+            <span>
+              <strong>Автозапуск следующего раунда</strong>
+              <small>После результата следующий раунд стартует сам. Выключите, если нужна пауза между раундами.</small>
+            </span>
+          </label>
         </div>
           </div>
         </details>
@@ -1389,6 +1413,7 @@ function PlayerRoom({
   audioRef,
   onStart,
   onResetGame,
+  onAutoNextRoundToggle,
   onAudioNeedsGestureChange,
   onSettingsChange,
   onSubmit
@@ -1403,6 +1428,7 @@ function PlayerRoom({
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
   onStart: () => void;
   onResetGame: () => void;
+  onAutoNextRoundToggle: () => void;
   onAudioNeedsGestureChange: (needsGesture: boolean) => void;
   onSettingsChange: (settings: Partial<Room['settings']>) => void;
   onSubmit: (optionId: string) => void;
@@ -1420,6 +1446,12 @@ function PlayerRoom({
               <RotateCcw size={18} />
               В лобби
             </button>
+            {room.status === 'round-result' && (
+              <button className="secondary" type="button" onClick={onAutoNextRoundToggle}>
+                {room.settings.autoNextRound ? <Timer size={18} /> : <Play size={18} />}
+                {room.settings.autoNextRound ? 'Пауза между раундами' : 'Автозапуск раундов'}
+              </button>
+            )}
           </div>
         )}
         {room.status === 'lobby' && (
@@ -1597,10 +1629,12 @@ function RoomHeader({
         <Copy size={18} />
         <span>{copied ? 'Скопировано' : 'Пригласить'}</span>
       </button>
-      <button className="secondary icon-text" onClick={onOpenDisplay}>
-        <Radio size={18} />
-        <span>Экран ведущего</span>
-      </button>
+      {room.status === 'lobby' && (
+        <button className="secondary icon-text" onClick={onOpenDisplay}>
+          <Radio size={18} />
+          <span>Экран ведущего</span>
+        </button>
+      )}
       <button className="secondary icon-text" onClick={onLeaveRoom}>
         <DoorOpen size={18} />
         <span>Покинуть</span>
@@ -1903,7 +1937,7 @@ function ResultStage({
   emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void;
   onResetToLobby?: () => void;
 }) {
-  const nextRoundCountdown = useAutoNextCountdown(room.status, room.round);
+  const nextRoundCountdown = useAutoNextCountdown(room.status, room.round, room.settings.autoNextRound);
 
   function selectedOptionTitle(player: Player): string {
     const optionId = hasRevealedAnswer(player) ? player.lastAnswer.optionId : undefined;
@@ -1958,6 +1992,22 @@ function ResultStage({
           <button className="primary" onClick={() => emit('next_round', { code: room.code, playerId }, undefined, 'Готовим следующий трек')}>
             <Play size={18} />
             Следующий раунд
+          </button>
+        )}
+        {isHost && (
+          <button
+            className="secondary"
+            onClick={() =>
+              emit<Room>(
+                'set_auto_next_round',
+                { code: room.code, playerId, enabled: !room.settings.autoNextRound },
+                undefined,
+                room.settings.autoNextRound ? 'Ставим паузу между раундами' : 'Включаем автозапуск раундов'
+              )
+            }
+          >
+            {room.settings.autoNextRound ? <Timer size={18} /> : <Play size={18} />}
+            {room.settings.autoNextRound ? 'Пауза между раундами' : 'Автозапуск раундов'}
           </button>
         )}
         {nextRoundCountdown > 0 && (
@@ -2222,11 +2272,11 @@ function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, se
   };
 }
 
-function useAutoNextCountdown(status: Room['status'], round: number): number {
+function useAutoNextCountdown(status: Room['status'], round: number, enabled = true): number {
   const [secondsLeft, setSecondsLeft] = useState(5);
 
   useEffect(() => {
-    if (status !== 'round-result') {
+    if (status !== 'round-result' || !enabled) {
       setSecondsLeft(0);
       return undefined;
     }
@@ -2239,7 +2289,7 @@ function useAutoNextCountdown(status: Room['status'], round: number): number {
     }, 250);
 
     return () => window.clearInterval(interval);
-  }, [status, round]);
+  }, [status, round, enabled]);
 
   return secondsLeft;
 }

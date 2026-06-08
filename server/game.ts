@@ -78,6 +78,7 @@ const DEFAULT_SETTINGS: RoomSettings = {
   targetScore: 10_000,
   questionDurationMs: 10_000,
   allowAnswerChange: false,
+  autoNextRound: true,
   achievementsEnabled: true
 };
 const ANSWER_CHANGE_PENALTY = 50;
@@ -186,6 +187,7 @@ export class GameEngine {
       targetScore: clampInteger(settings.targetScore ?? room.settings.targetScore, 500, 200_000),
       questionDurationMs: clampInteger(settings.questionDurationMs ?? room.settings.questionDurationMs, 5_000, maxQuestionDurationMs(difficulty)),
       allowAnswerChange: typeof settings.allowAnswerChange === 'boolean' ? settings.allowAnswerChange : room.settings.allowAnswerChange,
+      autoNextRound: typeof settings.autoNextRound === 'boolean' ? settings.autoNextRound : room.settings.autoNextRound,
       achievementsEnabled: true
     };
 
@@ -198,6 +200,15 @@ export class GameEngine {
     if (!player?.isHost) {
       throw new Error('Only host can perform this action');
     }
+  }
+
+  setAutoNextRound(code: string, enabled: boolean): PublicRoom {
+    const room = this.requireRoom(code);
+    if (room.status === 'finished') {
+      throw new Error('Auto round start cannot be changed after game is finished');
+    }
+    room.settings.autoNextRound = enabled;
+    return toPublicRoom(room, room.status === 'round-result');
   }
 
   markPreparing(code: string): PublicRoom {
@@ -893,6 +904,7 @@ function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
       maxQuestionDurationMs(settings.difficulty === 'hard' ? 'hard' : DEFAULT_SETTINGS.difficulty)
     ),
     allowAnswerChange: settings.allowAnswerChange ?? DEFAULT_SETTINGS.allowAnswerChange,
+    autoNextRound: settings.autoNextRound ?? DEFAULT_SETTINGS.autoNextRound,
     achievementsEnabled: true
   };
 }

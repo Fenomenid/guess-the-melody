@@ -795,6 +795,20 @@ select:focus {
   grid-column: 1 / -1;
 }
 
+.settings-subgroup {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-subgroup-title {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .difficulty-toggle {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
