@@ -266,8 +266,16 @@ h2 {
 }
 
 .display-lobby-stage {
+  align-items: stretch;
+  text-align: left;
+}
+
+.display-lobby-content {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
   align-items: center;
-  text-align: center;
+  gap: 28px;
 }
 
 .display-question-stage .answer-button {
@@ -456,7 +464,7 @@ h2 {
 }
 
 .layout.question-layout {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 320px minmax(0, 1fr);
 }
 
 .sidebar,
@@ -1191,6 +1199,7 @@ select:focus {
 }
 
 .answers {
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
@@ -1198,6 +1207,7 @@ select:focus {
 
 .answer-button {
   position: relative;
+  width: 100%;
   min-height: 86px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1210,6 +1220,7 @@ select:focus {
   user-select: none;
   -webkit-user-select: none;
   overflow-wrap: anywhere;
+  min-width: 0;
   transition:
     transform 160ms ease,
     box-shadow 160ms ease,
@@ -1927,12 +1938,13 @@ select:focus {
     order: -1;
     min-height: auto;
     padding: 10px;
+    min-width: 0;
   }
 
   .question-page .round-screen {
     min-height: calc(100dvh - 68px);
     display: grid;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto;
     align-content: start;
     gap: 8px;
   }
@@ -2000,6 +2012,7 @@ select:focus {
   .question-page .answers {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
+    width: 100%;
   }
 
   .question-page .answer-button {
@@ -2007,6 +2020,7 @@ select:focus {
     padding: 8px 28px 8px 10px;
     font-size: 14px;
     line-height: 1.12;
+    min-width: 0;
   }
 
   .question-page .answer-picked {
@@ -2159,6 +2173,14 @@ select:focus {
   }
 
   .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .result-page .game-panel {
+    order: -1;
+  }
+
+  .display-lobby-content {
     grid-template-columns: 1fr;
   }
 

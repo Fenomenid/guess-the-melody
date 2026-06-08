@@ -95,6 +95,7 @@ type GetFileInfoResult = {
 
 type ThemeConfig = Theme & {
   chartId?: 'russia' | 'world';
+  playlistQueries?: string[];
   metatagIds?: string[];
   stationIds?: string[];
   optionQueries?: string[];
@@ -161,6 +162,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Поп',
     description: 'Готовые поп-подборки Яндекс Музыки через метатеги',
     source: 'yandex',
+    playlistQueries: ['поп хиты', 'поп музыка'],
     stationIds: ['genre:pop'],
     metatagIds: ['pop', 'ruspop', 'russian-pop', 'foreign-pop']
   },
@@ -169,6 +171,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Рок',
     description: 'Готовые рок-подборки Яндекс Музыки через метатеги',
     source: 'yandex',
+    playlistQueries: ['рок хиты', 'рок музыка'],
     stationIds: ['genre:allrock', 'genre:rock'],
     metatagIds: ['rock', 'rusrock', 'russian-rock', 'foreign-rock']
   },
@@ -177,6 +180,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Рэп и хип-хоп',
     description: 'Готовые рэп и хип-хоп подборки Яндекс Музыки',
     source: 'yandex',
+    playlistQueries: ['рэп хиты', 'хип-хоп хиты'],
     stationIds: ['genre:rap', 'genre:hiphop'],
     metatagIds: ['rap', 'hip-hop', 'rusrap', 'russian-rap']
   },
@@ -185,6 +189,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Русский рэп',
     description: 'Русский рэп и хип-хоп из подборок Яндекс Музыки',
     source: 'yandex',
+    playlistQueries: ['русский рэп', 'русский хип-хоп'],
     stationIds: ['genre:rusrap'],
     metatagIds: ['rusrap', 'russian-rap'],
     optionQueries: ['русский рэп', 'russian rap', 'ru hip hop']
@@ -194,6 +199,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Электроника',
     description: 'Электронные подборки и плейлисты Яндекс Музыки',
     source: 'yandex',
+    playlistQueries: ['электронная музыка', 'edm хиты'],
     stationIds: ['genre:electronics', 'genre:electronic'],
     metatagIds: ['electronic', 'electronics', 'dance-electronic'],
     optionQueries: ['electronic music', 'edm', 'techno', 'house music']
@@ -203,6 +209,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Танцевальная',
     description: 'Танцевальные подборки Яндекс Музыки',
     source: 'yandex',
+    playlistQueries: ['танцевальная музыка', 'dance hits'],
     stationIds: ['genre:dance'],
     metatagIds: ['dance', 'club', 'house'],
     optionQueries: ['dance music', 'club music', 'house music']
@@ -212,6 +219,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Инди',
     description: 'Инди-подборки Яндекс Музыки',
     source: 'yandex',
+    playlistQueries: ['инди музыка', 'indie hits'],
     stationIds: ['genre:indie'],
     metatagIds: ['indie', 'alternative', 'rusindie']
   },
@@ -220,6 +228,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Нулевые',
     description: 'Подборки треков 2000-х из Яндекс Музыки',
     source: 'yandex',
+    playlistQueries: ['хиты 2000-х', 'нулевые хиты'],
     metatagIds: ['2000s', '00s', 'decade-2000']
   },
   {
@@ -227,6 +236,7 @@ const THEMES: ThemeConfig[] = [
     title: 'Девяностые',
     description: 'Подборки треков 90-х из Яндекс Музыки',
     source: 'yandex',
+    playlistQueries: ['хиты 90-х', 'девяностые хиты'],
     metatagIds: ['90s', '1990s', 'decade-1990']
   },
   {
@@ -234,6 +244,7 @@ const THEMES: ThemeConfig[] = [
     title: 'K-pop',
     description: 'K-pop подборки Яндекс Музыки',
     source: 'yandex',
+    playlistQueries: ['k-pop hits', 'kpop hits'],
     stationIds: ['genre:kpop', 'genre:k-pop'],
     metatagIds: ['k-pop', 'kpop'],
     optionQueries: ['k-pop', 'kpop', 'korean pop']
@@ -248,7 +259,7 @@ export class MusicService {
   private lastLoadStats: TrackLoadStats | undefined;
 
   getThemes(): Theme[] {
-    return THEMES.map(({ chartId: _chartId, metatagIds: _metatagIds, stationIds: _stationIds, ...theme }) => theme);
+    return THEMES.map(({ chartId: _chartId, playlistQueries: _playlistQueries, metatagIds: _metatagIds, stationIds: _stationIds, ...theme }) => theme);
   }
 
   diagnostics(): MusicDiagnostics {
@@ -373,6 +384,13 @@ export class MusicService {
 
     const tracks: YandexTrack[] = [];
 
+    if (theme.playlistQueries) {
+      tracks.push(...(await this.getThemePlaylistCandidates(theme.playlistQueries, theme.title)));
+      if (tracks.length >= 40) {
+        return uniqueByTrackId(tracks);
+      }
+    }
+
     if (theme.stationIds) {
       tracks.push(...(await this.getStationCandidates(theme.stationIds)));
     }
@@ -386,6 +404,30 @@ export class MusicService {
     }
 
     return uniqueByTrackId(tracks);
+  }
+
+  private async getThemePlaylistCandidates(queries: string[], sourceName: string): Promise<YandexTrack[]> {
+    for (const query of queries) {
+      try {
+        const result = await this.get<SearchResult>(`/search?${new URLSearchParams({ text: query, type: 'playlist', page: '0' })}`);
+        const firstPlaylist = uniquePlaylistSearchItems(result.playlists?.results ?? [])[0];
+        if (!firstPlaylist) {
+          continue;
+        }
+        const tracks = await this.getPlaylistUrlCandidates(firstPlaylist.url);
+        if (tracks.length > 0) {
+          return tracks.map((track) => ({
+            ...track,
+            sourceName: firstPlaylist.name || sourceName,
+            sourceUrl: firstPlaylist.url
+          }));
+        }
+      } catch (error) {
+        console.warn(`[music] playlist search ${query} failed: ${toClientMessage(error)}`);
+      }
+    }
+
+    return [];
   }
 
   private async getSourceCandidates(themeIds: string[], playlistSources: PlaylistSource[] = []): Promise<YandexTrack[]> {

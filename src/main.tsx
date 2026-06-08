@@ -170,7 +170,7 @@ function App() {
   const [volume, setVolume] = useState(() => Number(localStorage.getItem('volume') ?? 0.1));
   const [volumeOpen, setVolumeOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
-  const [selectedOptionId, setSelectedOptionId] = useState('');
+  const [selectedAnswer, setSelectedAnswer] = useState({ questionId: '', optionId: '' });
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const leftRoomCodesRef = useRef(new Set<string>());
   const roomRef = useRef<Room | null>(null);
@@ -186,6 +186,7 @@ function App() {
   const isResultStage = room?.status === 'round-result' || room?.status === 'finished';
   const answeredCount = room?.players.filter((player) => Boolean(player.lastAnswer)).length ?? 0;
   const playerCount = room?.players.length ?? 0;
+  const selectedOptionId = room?.currentQuestion?.id === selectedAnswer.questionId ? selectedAnswer.optionId : '';
 
   useEffect(() => {
     document.documentElement.dataset.theme = 'dark';
@@ -294,8 +295,10 @@ function App() {
   }, [volume]);
 
   useEffect(() => {
-    setSelectedOptionId('');
-  }, [room?.currentQuestion?.id]);
+    if (room?.status !== 'question' || !room.currentQuestion) {
+      setSelectedAnswer({ questionId: '', optionId: '' });
+    }
+  }, [room?.status, room?.currentQuestion?.id]);
 
   useEffect(() => {
     if (!room) {
@@ -417,7 +420,7 @@ function App() {
 
   function submitAnswer(optionId: string) {
     if (!room || (me?.lastAnswer && !room.settings.allowAnswerChange)) return;
-    setSelectedOptionId(optionId);
+    setSelectedAnswer({ questionId: room.currentQuestion?.id ?? '', optionId });
     emit('submit_answer', { code: room.code, playerId, optionId }, undefined, 'Фиксируем ответ');
   }
 
@@ -601,6 +604,7 @@ function App() {
           audioRef={audioRef}
           answeredCount={answeredCount}
           playerCount={playerCount}
+          onResetToLobby={() => emit<Room>('reset_display_game', { code: room.code }, setRoom, 'Возвращаем в лобби')}
         />
         {volumeButton}
       </>
@@ -640,18 +644,16 @@ function App() {
       {error && <p className="error">{error}</p>}
 
       <div className={['layout', isQuestionStage ? 'question-layout' : ''].filter(Boolean).join(' ')}>
-        {!isQuestionStage && (
-          <PlayersPanel
-            room={room}
-            players={sortedPlayers}
-            playerId={playerId}
-            isHost={isHost}
-            isQuestionStage={isQuestionStage}
-            answeredCount={answeredCount}
-            playerCount={playerCount}
-            onKickPlayer={requestKickPlayer}
-          />
-        )}
+        <PlayersPanel
+          room={room}
+          players={sortedPlayers}
+          playerId={playerId}
+          isHost={isHost}
+          isQuestionStage={isQuestionStage}
+          answeredCount={answeredCount}
+          playerCount={playerCount}
+          onKickPlayer={requestKickPlayer}
+        />
 
         <section className="game-panel">
           {room.status === 'lobby' && (
@@ -1193,21 +1195,23 @@ function DisplayRoom({
   volume,
   audioRef,
   answeredCount,
-  playerCount
+  playerCount,
+  onResetToLobby
 }: {
   room: Room;
   volume: number;
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
   answeredCount: number;
   playerCount: number;
+  onResetToLobby: () => void;
 }) {
   const playerUrl = playerRoomUrl(room.code);
   const noopEmit = () => undefined;
-  const showJoinQr = room.status === 'lobby' || room.status === 'preparing';
+  const showJoinQr = room.status === 'lobby';
 
   return (
     <main className="page display-page">
-      <section className={['display-hero', !showJoinQr ? 'compact' : ''].filter(Boolean).join(' ')}>
+      <section className="display-hero compact">
         <div>
           <p className="eyebrow">Комната {room.code}</p>
           <h1 className="app-title">Угадай мелодию</h1>
@@ -1216,14 +1220,18 @@ function DisplayRoom({
             <span>Ответили: {answeredCount}/{playerCount}</span>
           </div>
         </div>
-        {showJoinQr && <QrJoinCard roomCode={room.code} url={playerUrl} />}
       </section>
 
       <section className="game-panel display-game-panel">
         {room.status === 'lobby' && (
           <div className="stage display-lobby-stage">
-            <h2>Ждем игроков</h2>
-            <p className="muted">Игроки сканируют QR-код и отвечают со своих телефонов.</p>
+            <div className="display-lobby-content">
+              <div>
+                <h2>Ждем игроков</h2>
+                <p className="muted">Игроки сканируют QR-код и отвечают со своих телефонов.</p>
+              </div>
+              {showJoinQr && <QrJoinCard roomCode={room.code} url={playerUrl} />}
+            </div>
           </div>
         )}
         {room.status === 'preparing' && <PreparingStage />}
@@ -1231,7 +1239,7 @@ function DisplayRoom({
           <DisplayQuestionStage room={room} volume={volume} audioRef={audioRef} answeredCount={answeredCount} playerCount={playerCount} />
         )}
         {(room.status === 'round-result' || room.status === 'finished') && (
-          <ResultStage room={room} isHost={false} playerId="" emit={noopEmit} />
+          <ResultStage room={room} isHost={false} playerId="" emit={noopEmit} onResetToLobby={onResetToLobby} />
         )}
       </section>
     </main>
@@ -1778,12 +1786,14 @@ function ResultStage({
   room,
   isHost,
   playerId,
-  emit
+  emit,
+  onResetToLobby
 }: {
   room: Room;
   isHost: boolean;
   playerId: string;
   emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void;
+  onResetToLobby?: () => void;
 }) {
   const nextRoundCountdown = useAutoNextCountdown(room.status, room.round);
 
@@ -1793,7 +1803,7 @@ function ResultStage({
   }
 
   if (room.status === 'finished') {
-    return <FinalStage room={room} isHost={isHost} playerId={playerId} emit={emit} selectedOptionTitle={selectedOptionTitle} />;
+    return <FinalStage room={room} isHost={isHost} playerId={playerId} emit={emit} selectedOptionTitle={selectedOptionTitle} onResetToLobby={onResetToLobby} />;
   }
 
   return (
@@ -1858,13 +1868,15 @@ function FinalStage({
   isHost,
   playerId,
   emit,
-  selectedOptionTitle
+  selectedOptionTitle,
+  onResetToLobby
 }: {
   room: Room;
   isHost: boolean;
   playerId: string;
   emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void;
   selectedOptionTitle: (player: Player) => string;
+  onResetToLobby?: () => void;
 }) {
   const podium = [room.players[1], room.players[0], room.players[2]].filter(Boolean);
 
@@ -1912,6 +1924,12 @@ function FinalStage({
           <button className="primary" onClick={() => emit('reset_game', { code: room.code, playerId }, undefined, 'Возвращаем в лобби')}>
             <RotateCcw size={18} />
             Новая игра
+          </button>
+        )}
+        {!isHost && onResetToLobby && (
+          <button className="primary" onClick={onResetToLobby}>
+            <RotateCcw size={18} />
+            В лобби
           </button>
         )}
       </div>

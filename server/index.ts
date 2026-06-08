@@ -254,15 +254,23 @@ io.on('connection', (socket) => {
     try {
       requireSocketPlayer(socket.id, code, playerId);
       engine.assertHost(code, playerId);
-      clearRoundTimer(code);
-      clearNextRoundTimer(code);
-      const room = engine.resetToLobby(code);
-      roomTracks.delete(room.code);
-      roomOptionTracks.delete(room.code);
-      nextPoolLoadToken(room.code);
-      await persistRooms();
+      const room = await resetRoomToLobby(code);
       callback?.({ data: room });
       io.to(room.code).emit('room_state', room);
+    } catch (error) {
+      callback?.({ error: toClientError(error) });
+    }
+  });
+
+  socket.on('reset_display_game', async ({ code }: { code: string }, callback) => {
+    try {
+      const room = engine.getPublicRoom(code.toUpperCase());
+      if (room.status !== 'finished') {
+        throw new Error('Display can reset only after the game is finished');
+      }
+      const nextRoom = await resetRoomToLobby(room.code);
+      callback?.({ data: nextRoom });
+      io.to(nextRoom.code).emit('room_state', nextRoom);
     } catch (error) {
       callback?.({ error: toClientError(error) });
     }
@@ -298,6 +306,17 @@ async function bootstrap(): Promise<void> {
   httpServer.listen(port, host, () => {
     console.log(`Server listening on http://${host}:${port}`);
   });
+}
+
+async function resetRoomToLobby(code: string): Promise<ReturnType<GameEngine['resetToLobby']>> {
+  clearRoundTimer(code);
+  clearNextRoundTimer(code);
+  const room = engine.resetToLobby(code);
+  roomTracks.delete(room.code);
+  roomOptionTracks.delete(room.code);
+  nextPoolLoadToken(room.code);
+  await persistRooms();
+  return room;
 }
 
 async function hydrateRoomTrackPool(
