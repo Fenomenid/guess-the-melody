@@ -261,8 +261,8 @@ io.on('connection', (socket) => {
         clearNextRoundTimer(room.code);
       }
       await persistRooms();
-      callback?.({ data: engine.getPublicRoom(room.code) });
-      io.to(room.code).emit('room_state', engine.getPublicRoom(room.code));
+      callback?.({ data: room });
+      io.to(room.code).emit('room_state', room);
     } catch (error) {
       callback?.({ error: toClientError(error) });
     }

@@ -1967,26 +1967,6 @@ function ResultStage({
         </div>
       )}
       <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact />
-      <div className="result-list">
-        {room.players.map((player, index) => (
-          <div className="score-row" key={player.id}>
-            <span>{index === 0 ? <Crown size={18} /> : index + 1}</span>
-            <strong>
-              {player.name}
-              <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>
-                {selectedOptionTitle(player)}
-              </small>
-            </strong>
-            {hasRevealedAnswer(player) && player.lastAnswer.points ? (
-              <b className={['score-pop', player.lastAnswer.points < 0 ? 'penalty' : ''].filter(Boolean).join(' ')}>
-                {formatSignedPoints(player.lastAnswer.points)}
-              </b>
-            ) : (
-              <small>0</small>
-            )}
-          </div>
-        ))}
-      </div>
       <div className="actions">
         {isHost && (
           <button className="primary" onClick={() => emit('next_round', { code: room.code, playerId }, undefined, 'Готовим следующий трек')}>
