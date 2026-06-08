@@ -171,6 +171,7 @@ function App() {
   const [volumeOpen, setVolumeOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState({ questionId: '', optionId: '' });
+  const [audioNeedsGesture, setAudioNeedsGesture] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const leftRoomCodesRef = useRef(new Set<string>());
   const roomRef = useRef<Room | null>(null);
@@ -292,11 +293,15 @@ function App() {
     if (audioRef.current) {
       audioRef.current.volume = volume;
     }
+    if (volume === 0) {
+      setAudioNeedsGesture(false);
+    }
   }, [volume]);
 
   useEffect(() => {
     if (room?.status !== 'question' || !room.currentQuestion) {
       setSelectedAnswer({ questionId: '', optionId: '' });
+      setAudioNeedsGesture(false);
     }
   }, [room?.status, room?.currentQuestion?.id]);
 
@@ -506,9 +511,18 @@ function App() {
     window.open(displayRoomUrl(room.code), '_blank', 'noopener,noreferrer');
   }
 
+  function toggleVolume() {
+    setVolumeOpen((value) => !value);
+    const audio = audioRef.current;
+    if (audio && volume > 0) {
+      audio.volume = volume;
+      void audio.play().then(() => setAudioNeedsGesture(false)).catch(() => setAudioNeedsGesture(true));
+    }
+  }
+
   const volumeButton = (
     <div className="floating-volume" onPointerDown={(event) => event.stopPropagation()}>
-      <button className="round-button" type="button" aria-label="Громкость" onClick={() => setVolumeOpen((value) => !value)}>
+      <button className={['round-button', audioNeedsGesture ? 'needs-audio-gesture' : ''].filter(Boolean).join(' ')} type="button" aria-label="Громкость" onClick={toggleVolume}>
         {volume === 0 ? <VolumeX size={22} /> : <Volume2 size={22} />}
       </button>
       {volumeOpen && (
@@ -613,17 +627,25 @@ function App() {
 
   if (appMode === 'player') {
     return (
-      <PlayerRoom
-        room={room}
-        me={me}
-        themes={themes}
-        isHost={isHost}
-        isBusy={isBusy}
-        selectedOptionId={selectedOptionId}
-        onStart={() => emit('start_game', { code: room.code, playerId }, undefined, 'Готовим треки Яндекс Музыки')}
-        onSettingsChange={updateSettings}
-        onSubmit={submitAnswer}
-      />
+      <>
+        <PlayerRoom
+          room={room}
+          me={me}
+          themes={themes}
+          isHost={isHost}
+          isBusy={isBusy}
+          selectedOptionId={selectedOptionId}
+          volume={volume}
+          audioRef={audioRef}
+          onStart={() => emit('start_game', { code: room.code, playerId }, undefined, 'Готовим треки Яндекс Музыки')}
+          onResetGame={requestResetGame}
+          onAudioNeedsGestureChange={setAudioNeedsGesture}
+          onSettingsChange={updateSettings}
+          onSubmit={submitAnswer}
+        />
+        {isQuestionStage && volumeButton}
+        {confirmDialog && <ConfirmModal dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />}
+      </>
     );
   }
 
@@ -1208,6 +1230,7 @@ function DisplayRoom({
   const playerUrl = playerRoomUrl(room.code);
   const noopEmit = () => undefined;
   const showJoinQr = room.status === 'lobby';
+  const isQuestionStage = room.status === 'question' && Boolean(room.currentQuestion);
 
   return (
     <main className="page display-page">
@@ -1222,26 +1245,38 @@ function DisplayRoom({
         </div>
       </section>
 
-      <section className="game-panel display-game-panel">
-        {room.status === 'lobby' && (
-          <div className="stage display-lobby-stage">
-            <div className="display-lobby-content">
-              <div>
-                <h2>Ждем игроков</h2>
-                <p className="muted">Игроки сканируют QR-код и отвечают со своих телефонов.</p>
+      <div className="display-layout">
+        <PlayersPanel
+          room={room}
+          players={room.players}
+          playerId=""
+          isHost={false}
+          isQuestionStage={isQuestionStage}
+          answeredCount={answeredCount}
+          playerCount={playerCount}
+          onKickPlayer={noopEmit}
+        />
+        <section className="game-panel display-game-panel">
+          {room.status === 'lobby' && (
+            <div className="stage display-lobby-stage">
+              <div className="display-lobby-content">
+                <div>
+                  <h2>Ждем игроков</h2>
+                  <p className="muted">Игроки сканируют QR-код и отвечают со своих телефонов.</p>
+                </div>
+                {showJoinQr && <QrJoinCard roomCode={room.code} url={playerUrl} />}
               </div>
-              {showJoinQr && <QrJoinCard roomCode={room.code} url={playerUrl} />}
             </div>
-          </div>
-        )}
-        {room.status === 'preparing' && <PreparingStage />}
-        {room.status === 'question' && room.currentQuestion && (
-          <DisplayQuestionStage room={room} volume={volume} audioRef={audioRef} answeredCount={answeredCount} playerCount={playerCount} />
-        )}
-        {(room.status === 'round-result' || room.status === 'finished') && (
-          <ResultStage room={room} isHost={false} playerId="" emit={noopEmit} onResetToLobby={onResetToLobby} />
-        )}
-      </section>
+          )}
+          {room.status === 'preparing' && <PreparingStage />}
+          {room.status === 'question' && room.currentQuestion && (
+            <DisplayQuestionStage room={room} volume={volume} audioRef={audioRef} answeredCount={answeredCount} playerCount={playerCount} />
+          )}
+          {(room.status === 'round-result' || room.status === 'finished') && (
+            <ResultStage room={room} isHost={false} playerId="" emit={noopEmit} onResetToLobby={onResetToLobby} />
+          )}
+        </section>
+      </div>
     </main>
   );
 }
@@ -1350,7 +1385,11 @@ function PlayerRoom({
   isHost,
   isBusy,
   selectedOptionId,
+  volume,
+  audioRef,
   onStart,
+  onResetGame,
+  onAudioNeedsGestureChange,
   onSettingsChange,
   onSubmit
 }: {
@@ -1360,7 +1399,11 @@ function PlayerRoom({
   isHost: boolean;
   isBusy: boolean;
   selectedOptionId: string;
+  volume: number;
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>;
   onStart: () => void;
+  onResetGame: () => void;
+  onAudioNeedsGestureChange: (needsGesture: boolean) => void;
   onSettingsChange: (settings: Partial<Room['settings']>) => void;
   onSubmit: (optionId: string) => void;
 }) {
@@ -1371,6 +1414,14 @@ function PlayerRoom({
           <span>Комната {room.code}</span>
           <strong>{me?.name ?? 'Игрок'}</strong>
         </div>
+        {isHost && room.status !== 'lobby' && (
+          <div className="player-host-actions">
+            <button className={room.status === 'finished' ? 'primary' : 'secondary'} type="button" onClick={onResetGame}>
+              <RotateCcw size={18} />
+              В лобби
+            </button>
+          </div>
+        )}
         {room.status === 'lobby' && (
           isHost ? (
             <div className="player-host-lobby">
@@ -1383,10 +1434,23 @@ function PlayerRoom({
         )}
         {room.status === 'preparing' && <PlayerStatus title="Готовим трек" text="Сейчас появятся варианты ответа." />}
         {room.status === 'question' && room.currentQuestion && (
-          <PlayerQuestionStage room={room} me={me} selectedOptionId={selectedOptionId} onSubmit={onSubmit} />
+          <PlayerQuestionStage
+            room={room}
+            me={me}
+            selectedOptionId={selectedOptionId}
+            volume={volume}
+            audioRef={audioRef}
+            onAudioNeedsGestureChange={onAudioNeedsGestureChange}
+            onSubmit={onSubmit}
+          />
         )}
         {room.status === 'round-result' && <PlayerRoundResult room={room} me={me} />}
-        {room.status === 'finished' && <PlayerStatus title="Игра окончена" text={`Победитель: ${room.players[0]?.name ?? 'игрок'}.`} />}
+        {room.status === 'finished' && (
+          <div className="player-round-result">
+            <PlayerStatus title="Игра окончена" text={`Победитель: ${room.players[0]?.name ?? 'игрок'}.`} />
+            <PlayersPanel room={room} players={room.players} playerId={me?.id ?? ''} isHost={false} isQuestionStage={false} answeredCount={room.players.filter((player) => Boolean(player.lastAnswer)).length} playerCount={room.players.length} onKickPlayer={() => undefined} />
+          </div>
+        )}
       </section>
     </main>
   );
@@ -1410,6 +1474,7 @@ function PlayerRoundResult({ room, me }: { room: Room; me?: Player }) {
         </div>
       )}
       <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact />
+      <PlayersPanel room={room} players={room.players} playerId={me?.id ?? ''} isHost={false} isQuestionStage={false} answeredCount={room.players.filter((player) => Boolean(player.lastAnswer)).length} playerCount={room.players.length} onKickPlayer={() => undefined} />
     </div>
   );
 }
@@ -1427,19 +1492,62 @@ function PlayerQuestionStage({
   room,
   me,
   selectedOptionId,
+  volume,
+  audioRef,
+  onAudioNeedsGestureChange,
   onSubmit
 }: {
   room: Room;
   me?: Player;
   selectedOptionId: string;
+  volume: number;
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>;
+  onAudioNeedsGestureChange: (needsGesture: boolean) => void;
   onSubmit: (optionId: string) => void;
 }) {
   const question = room.currentQuestion!;
   const hasAnswered = Boolean(me?.lastAnswer);
   const isAnswerLocked = hasAnswered || Boolean(selectedOptionId);
 
+  function playAudio() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    if (volume <= 0) {
+      audio.pause();
+      onAudioNeedsGestureChange(false);
+      return;
+    }
+    void audio.play().then(() => onAudioNeedsGestureChange(false)).catch(() => onAudioNeedsGestureChange(true));
+  }
+
+  useEffect(() => {
+    onAudioNeedsGestureChange(false);
+    const timeout = window.setTimeout(playAudio, 150);
+    return () => window.clearTimeout(timeout);
+  }, [question.id]);
+
+  useEffect(() => {
+    if (volume <= 0) {
+      audioRef.current?.pause();
+      onAudioNeedsGestureChange(false);
+      return;
+    }
+    playAudio();
+  }, [volume]);
+
   return (
     <div className="player-question-stage">
+      <audio
+        ref={audioRef}
+        src={question.audioUrl}
+        preload="auto"
+        autoPlay
+        onCanPlay={playAudio}
+        onLoadedMetadata={(event) => {
+          event.currentTarget.volume = volume;
+        }}
+      />
       <div className="round-header round-topline">
         <span>{room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}</span>
         <span>{hasAnswered ? 'Ответ принят' : answerModePrompt(room.settings.answerMode)}</span>

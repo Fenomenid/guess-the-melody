@@ -265,6 +265,18 @@ h2 {
   min-height: 620px;
 }
 
+.display-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.display-layout .players-panel {
+  position: sticky;
+  top: 18px;
+}
+
 .display-lobby-stage {
   align-items: stretch;
   text-align: left;
@@ -310,6 +322,11 @@ h2 {
   color: var(--text-strong);
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+.player-host-actions {
+  display: grid;
+  grid-template-columns: 1fr;
 }
 
 .player-status-card {
@@ -1705,6 +1722,10 @@ select:focus {
   box-shadow: 0 14px 28px var(--accent-ring);
 }
 
+.round-button.needs-audio-gesture {
+  animation: audio-attention 1.1s ease-in-out infinite;
+}
+
 .volume-popover {
   width: min(360px, calc(100vw - 112px));
   display: grid;
@@ -1884,6 +1905,21 @@ select:focus {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes audio-attention {
+  0%,
+  100% {
+    box-shadow: 0 14px 28px var(--accent-ring);
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 8px var(--accent-ring),
+      0 18px 34px color-mix(in srgb, var(--accent) 32%, transparent);
+    transform: scale(1.04);
   }
 }
 
@@ -2182,6 +2218,18 @@ select:focus {
 
   .display-lobby-content {
     grid-template-columns: 1fr;
+  }
+
+  .display-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .display-layout .display-game-panel {
+    order: -1;
+  }
+
+  .display-layout .players-panel {
+    position: static;
   }
 
   .stage {
