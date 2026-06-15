@@ -71,11 +71,87 @@ body {
     var(--bg);
 }
 
-:root[data-theme="dark"] body {
+#root {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  isolation: isolate;
+}
+
+.starfield {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
   background:
-    radial-gradient(circle at 14% 6%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
-    radial-gradient(circle at 84% 12%, color-mix(in srgb, var(--gold) 9%, transparent), transparent 28%),
-    var(--bg);
+    radial-gradient(circle at 50% 115%, rgba(15, 74, 75, 0.28), transparent 42%),
+    linear-gradient(180deg, #020306 0%, #05080d 54%, #071014 100%);
+}
+
+.starfield-glow {
+  position: absolute;
+  inset: 0;
+  opacity: 0.7;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(57, 143, 151, 0.12), transparent 24%),
+    radial-gradient(circle at 80% 8%, rgba(176, 127, 57, 0.1), transparent 22%);
+}
+
+.starfield-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4000px;
+  will-change: transform;
+  animation: starfield-rise linear infinite;
+}
+
+.starfield-layer i {
+  position: absolute;
+  top: var(--star-y);
+  left: var(--star-x);
+  display: block;
+  border-radius: 50%;
+  opacity: var(--star-opacity);
+  background: #fff;
+  box-shadow: 0 0 5px rgba(191, 234, 255, 0.45);
+  animation: starfield-twinkle 6s ease-in-out var(--twinkle-delay) infinite;
+}
+
+.starfield-layer-far {
+  animation-duration: 50s;
+}
+
+.starfield-layer-far i {
+  width: 1px;
+  height: 1px;
+}
+
+.starfield-layer-middle {
+  animation-duration: 100s;
+}
+
+.starfield-layer-middle i {
+  width: 2px;
+  height: 2px;
+}
+
+.starfield-layer-near {
+  animation-duration: 150s;
+}
+
+.starfield-layer-near i {
+  width: 3px;
+  height: 3px;
+  box-shadow:
+    0 0 5px rgba(255, 255, 255, 0.85),
+    0 0 11px rgba(116, 202, 210, 0.38);
+}
+
+:root[data-theme="dark"] body {
+  background: var(--bg);
 }
 
 button,
@@ -1921,6 +1997,23 @@ select:focus {
   }
 }
 
+@keyframes starfield-rise {
+  to {
+    transform: translateY(-2000px);
+  }
+}
+
+@keyframes starfield-twinkle {
+  0%,
+  100% {
+    opacity: calc(var(--star-opacity) * 0.65);
+  }
+
+  50% {
+    opacity: var(--star-opacity);
+  }
+}
+
 @keyframes word-pop {
   from {
     opacity: 0;
@@ -2260,6 +2353,13 @@ select:focus {
 
   .question-players-panel .player-row {
     min-height: 58px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .starfield-layer,
+  .starfield-layer i {
+    animation: none;
   }
 }
 

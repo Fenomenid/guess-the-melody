@@ -28,6 +28,7 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
+import { Starfield } from './starfield';
 import './styles.css';
 
 type Theme = {
@@ -2354,6 +2355,7 @@ function useAutoNextCountdown(status: Room['status'], round: number, enabled = t
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
+    <Starfield />
     <App />
   </React.StrictMode>
 );
