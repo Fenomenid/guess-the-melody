@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
   Achievement,
+  ComebackState,
   MatchMoment,
   Player,
   PlayerAnswerResult,
@@ -57,6 +58,7 @@ type Room = {
   usedTrackIds: Set<string>;
   usedOptionTitles: Set<string>;
   roundHistory: RoundHistoryEntry[];
+  comeback: ComebackState;
   round: number;
 };
 
@@ -69,6 +71,7 @@ export type SerializedRoom = {
   usedTrackIds: string[];
   usedOptionTitles?: string[];
   roundHistory?: RoundHistoryEntry[];
+  comeback?: ComebackState;
   round: number;
 };
 
@@ -97,16 +100,24 @@ const DEFAULT_SETTINGS: RoomSettings = {
   questionDurationMs: 10_000,
   allowAnswerChange: false,
   autoNextRound: true,
-  achievementsEnabled: true
+  achievementsEnabled: true,
+  comebackMode: false
 };
 const ANSWER_CHANGE_PENALTY = 50;
 const MIN_CORRECT_POINTS = 100;
 const MAX_WRONG_PENALTY = 150;
+const MAX_COMEBACK_ENERGY = 100;
+const JAMMER_COST = 60;
+const COUNTER_COST = 45;
+const COUNTER_REWARD = 25;
 
 export class GameEngine {
   private readonly rooms = new Map<string, Room>();
 
-  constructor(private readonly codeGenerator = createRoomCode) {}
+  constructor(
+    private readonly codeGenerator = createRoomCode,
+    private readonly random = Math.random
+  ) {}
 
   createRoom(input: PlayerInput): PublicRoom {
     let code = this.codeGenerator();
@@ -123,6 +134,7 @@ export class GameEngine {
       usedTrackIds: new Set(),
       usedOptionTitles: new Set(),
       roundHistory: [],
+      comeback: {},
       round: 0
     };
 
@@ -144,6 +156,7 @@ export class GameEngine {
       usedTrackIds: new Set(),
       usedOptionTitles: new Set(),
       roundHistory: [],
+      comeback: {},
       round: 0
     };
 
@@ -206,7 +219,8 @@ export class GameEngine {
       questionDurationMs: clampInteger(settings.questionDurationMs ?? room.settings.questionDurationMs, 5_000, maxQuestionDurationMs(difficulty)),
       allowAnswerChange: typeof settings.allowAnswerChange === 'boolean' ? settings.allowAnswerChange : room.settings.allowAnswerChange,
       autoNextRound: typeof settings.autoNextRound === 'boolean' ? settings.autoNextRound : room.settings.autoNextRound,
-      achievementsEnabled: true
+      achievementsEnabled: true,
+      comebackMode: typeof settings.comebackMode === 'boolean' ? settings.comebackMode : room.settings.comebackMode
     };
 
     return toPublicRoom(room);
@@ -227,6 +241,62 @@ export class GameEngine {
     }
     room.settings.autoNextRound = enabled;
     return toPublicRoom(room, room.status === 'round-result');
+  }
+
+  activateComebackAbility(code: string, playerId: string, counterPrediction?: number): PublicRoom {
+    const room = this.requireRoom(code);
+    if (!room.settings.comebackMode) {
+      throw new Error('Revansh mode is disabled');
+    }
+    if (room.status !== 'round-result') {
+      throw new Error('Abilities can only be armed after a round');
+    }
+
+    const player = room.players.get(playerId);
+    if (!player) {
+      throw new Error('Player is not in the room');
+    }
+
+    const leader = rankedPlayers(room)[0];
+    if (!leader) {
+      throw new Error('No leader is available');
+    }
+
+    if (leader.id === player.id) {
+      if (!room.comeback.queuedJammerPlayerId) {
+        throw new Error('Countermeasure can only be armed against a queued Jammer');
+      }
+      if (!Number.isInteger(counterPrediction) || counterPrediction! < 0 || counterPrediction! > 3) {
+        throw new Error('Choose an answer slot from 1 to 4');
+      }
+      if (player.pendingComebackAbility === 'counter') {
+        throw new Error('Countermeasure is already armed');
+      }
+      if (player.comebackEnergy < COUNTER_COST) {
+        throw new Error('Not enough energy for Countermeasure');
+      }
+      player.comebackEnergy -= COUNTER_COST;
+      player.pendingComebackAbility = 'counter';
+      player.counterPrediction = counterPrediction;
+      player.comebackStatus = 'armed';
+      return toPublicRoom(room, true);
+    }
+
+    if (room.comeback.queuedJammerPlayerId) {
+      throw new Error('Jammer is already armed for the next round');
+    }
+    if (player.comebackEnergy < JAMMER_COST) {
+      throw new Error('Not enough energy for Jammer');
+    }
+
+    player.comebackEnergy -= JAMMER_COST;
+    player.pendingComebackAbility = 'jammer';
+    player.comebackStatus = 'armed';
+    room.comeback = {
+      queuedJammerPlayerId: player.id,
+      queuedJammerPlayerName: player.name
+    };
+    return toPublicRoom(room, true);
   }
 
   markPreparing(code: string): PublicRoom {
@@ -270,6 +340,10 @@ export class GameEngine {
 
     for (const player of room.players.values()) {
       player.lastAnswer = undefined;
+      player.hiddenOptionIndex = undefined;
+      if (player.comebackStatus !== 'armed') {
+        player.comebackStatus = undefined;
+      }
     }
 
     room.round += 1;
@@ -293,6 +367,7 @@ export class GameEngine {
       correctTrack,
       scoresApplied: false
     };
+    this.applyComebackEffects(room);
 
     return room.currentQuestion;
   }
@@ -354,9 +429,15 @@ export class GameEngine {
     room.round = 0;
     room.currentQuestion = undefined;
     room.roundHistory = [];
+    room.comeback = {};
     for (const player of room.players.values()) {
       player.score = 0;
       player.correctAnswers = 0;
+      player.comebackEnergy = 0;
+      player.pendingComebackAbility = undefined;
+      player.counterPrediction = undefined;
+      player.hiddenOptionIndex = undefined;
+      player.comebackStatus = undefined;
       player.lastAnswer = undefined;
     }
     return toPublicRoom(room);
@@ -436,6 +517,7 @@ export class GameEngine {
       usedTrackIds: [...room.usedTrackIds],
       usedOptionTitles: [...room.usedOptionTitles],
       roundHistory: room.roundHistory,
+      comeback: room.comeback,
       round: room.round
     }));
   }
@@ -451,13 +533,24 @@ export class GameEngine {
         players: new Map(
           snapshot.players.map((player) => [
             player.id,
-            { ...player, correctAnswers: player.correctAnswers ?? 0, connected: false, lastAnswer: undefined }
+            {
+              ...player,
+              correctAnswers: player.correctAnswers ?? 0,
+              comebackEnergy: player.comebackEnergy ?? 0,
+              connected: false,
+              lastAnswer: undefined,
+              pendingComebackAbility: undefined,
+              counterPrediction: undefined,
+              hiddenOptionIndex: undefined,
+              comebackStatus: undefined
+            }
           ])
         ),
         currentQuestion: restoredStatus === 'finished' ? snapshot.currentQuestion : undefined,
         usedTrackIds: new Set(snapshot.usedTrackIds),
         usedOptionTitles: new Set(snapshot.usedOptionTitles ?? []),
         roundHistory: snapshot.roundHistory ?? [],
+        comeback: snapshot.comeback ?? {},
         round: restoredStatus === 'finished' ? snapshot.round : 0
       };
       this.ensureHost(room);
@@ -485,10 +578,55 @@ export class GameEngine {
         player.correctAnswers += 1;
       }
     }
+    if (room.settings.comebackMode) {
+      this.awardComebackEnergy(room);
+    }
     if (room.settings.achievementsEnabled) {
       room.roundHistory.push(createRoundHistoryEntry(room, question));
     }
     question.scoresApplied = true;
+  }
+
+  private awardComebackEnergy(room: Room): void {
+    const ranking = rankedPlayers(room);
+    const leaderScore = ranking[0]?.score ?? 0;
+
+    ranking.forEach((player, index) => {
+      if (!player.lastAnswer?.isCorrect) {
+        return;
+      }
+      const gapBonus = index === 0 ? 0 : Math.min(12, Math.floor(Math.max(0, leaderScore - player.score) / 500) * 2);
+      const gained = index === 0 ? 18 : 28 + gapBonus;
+      player.comebackEnergy = Math.min(MAX_COMEBACK_ENERGY, player.comebackEnergy + gained);
+    });
+  }
+
+  private applyComebackEffects(room: Room): void {
+    if (!room.settings.comebackMode || !room.comeback.queuedJammerPlayerId) {
+      return;
+    }
+
+    const attacker = room.players.get(room.comeback.queuedJammerPlayerId);
+    const leader = rankedPlayers(room)[0];
+    if (!attacker || !leader) {
+      room.comeback = {};
+      return;
+    }
+
+    const hiddenOptionIndex = Math.min(3, Math.floor(this.random() * 4));
+    if (leader.pendingComebackAbility === 'counter' && leader.counterPrediction === hiddenOptionIndex) {
+      leader.comebackEnergy = Math.min(MAX_COMEBACK_ENERGY, leader.comebackEnergy + COUNTER_REWARD);
+      leader.comebackStatus = 'countered';
+    } else {
+      leader.hiddenOptionIndex = hiddenOptionIndex;
+      leader.comebackStatus = leader.pendingComebackAbility === 'counter' ? 'missed' : 'jammed';
+    }
+
+    attacker.pendingComebackAbility = undefined;
+    attacker.comebackStatus = undefined;
+    leader.pendingComebackAbility = undefined;
+    leader.counterPrediction = undefined;
+    room.comeback = {};
   }
 
   private ensureHost(room: Room): void {
@@ -526,6 +664,7 @@ function toPublicRoom(room: Room, revealCorrectTrack = false): PublicRoom {
     correctTrack: revealCorrectTrack ? room.currentQuestion?.correctTrack : undefined,
     achievements: room.settings.achievementsEnabled ? buildAchievements(room, revealCorrectTrack) : [],
     matchMoments: room.settings.achievementsEnabled && room.status === 'finished' ? buildMatchMoments(room.roundHistory) : [],
+    comeback: room.settings.comebackMode ? room.comeback : undefined,
     round: room.round,
     serverTime: Date.now()
   };
@@ -556,6 +695,15 @@ function sortPublicPlayers(players: PublicPlayer[], status: RoomStatus, revealRo
     return players.sort((a, b) => publicAnswerPoints(b) - publicAnswerPoints(a) || b.score - a.score);
   }
   return players.sort((a, b) => b.score - a.score || b.correctAnswers - a.correctAnswers);
+}
+
+function rankedPlayers(room: Room): Player[] {
+  return [...room.players.values()].sort(
+    (left, right) =>
+      right.score - left.score ||
+      right.correctAnswers - left.correctAnswers ||
+      left.name.localeCompare(right.name, 'ru')
+  );
 }
 
 function publicAnswerPoints(player: PublicPlayer): number {
@@ -727,6 +875,40 @@ function buildRevealAchievements(room: Room): Achievement[] {
   const correct = answers.filter((player) => player.lastAnswer.isCorrect);
   const achievements: ScoredAchievement[] = [];
   const round = room.currentQuestion?.round ?? room.round;
+
+  if (room.settings.comebackMode && room.currentQuestion) {
+    for (const player of answers) {
+      if (player.comebackStatus === 'countered') {
+        achievements.push({
+          id: `revansh-countered-${round}-${player.id}`,
+          icon: '🛡',
+          title: 'Контрразведка',
+          description: `${player.name} точно предсказал скрываемый слот и отменил Глушилку.`,
+          recipient: player.name,
+          tone: 'rare',
+          weight: 96
+        });
+      }
+
+      if (player.hiddenOptionIndex === undefined || !player.lastAnswer.isCorrect) {
+        continue;
+      }
+
+      const selectedIndex = room.currentQuestion.options.findIndex((option) => option.id === player.lastAnswer.optionId);
+      achievements.push({
+        id: `revansh-jammed-correct-${round}-${player.id}`,
+        icon: '⚡',
+        title: selectedIndex === player.hiddenOptionIndex ? 'На ощупь' : 'Не заглушить',
+        description:
+          selectedIndex === player.hiddenOptionIndex
+            ? `${player.name} выбрал скрытый вариант и всё равно угадал.`
+            : `${player.name} ответил правильно под действием Глушилки.`,
+        recipient: player.name,
+        tone: selectedIndex === player.hiddenOptionIndex ? 'rare' : 'good',
+        weight: selectedIndex === player.hiddenOptionIndex ? 98 : 88
+      });
+    }
+  }
 
   if (correct.length === 0) {
     achievements.push({
@@ -1384,7 +1566,8 @@ function createPlayer(input: PlayerInput, isHost: boolean): Player {
     score: 0,
     correctAnswers: 0,
     connected: true,
-    isHost
+    isHost,
+    comebackEnergy: 0
   };
 }
 
@@ -1482,7 +1665,8 @@ function normalizeSettings(settings: Partial<RoomSettings>): RoomSettings {
     ),
     allowAnswerChange: settings.allowAnswerChange ?? DEFAULT_SETTINGS.allowAnswerChange,
     autoNextRound: settings.autoNextRound ?? DEFAULT_SETTINGS.autoNextRound,
-    achievementsEnabled: true
+    achievementsEnabled: true,
+    comebackMode: settings.comebackMode ?? DEFAULT_SETTINGS.comebackMode
   };
 }
 

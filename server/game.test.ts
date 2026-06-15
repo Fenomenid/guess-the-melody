@@ -23,6 +23,83 @@ describe('GameEngine', () => {
     expect(room.settings.answerMode).toBe('title');
     expect(room.settings.autoNextRound).toBe(true);
     expect(room.settings.achievementsEnabled).toBe(true);
+    expect(room.settings.comebackMode).toBe(false);
+  });
+
+  it('charges comeback energy after correct answers when Revansh mode is enabled', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.updateSettings('ROOM42', { comebackMode: true });
+
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 2000);
+    engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 3000);
+
+    expect(engine.getPublicRoom('ROOM42').players.every((player) => player.comebackEnergy === 0)).toBe(true);
+
+    const revealed = engine.revealRound('ROOM42');
+    const leader = revealed.players.find((player) => player.id === 'leader');
+    const chaser = revealed.players.find((player) => player.id === 'chaser');
+
+    expect(leader?.comebackEnergy).toBeGreaterThan(0);
+    expect(chaser?.comebackEnergy).toBeGreaterThan(leader?.comebackEnergy ?? 0);
+  });
+
+  it('arms one jammer that hides exactly one answer from the leader in the next round', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.updateSettings('ROOM42', { comebackMode: true });
+
+    for (let round = 0; round < 3; round += 1) {
+      const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 9000 + round * 20_000);
+      engine.revealRound('ROOM42');
+    }
+
+    const armed = engine.activateComebackAbility('ROOM42', 'chaser');
+    expect(armed.comeback?.queuedJammerPlayerId).toBe('chaser');
+
+    engine.startNextRound('ROOM42', tracks, 10_000, 100_000);
+    const nextRoom = engine.getPublicRoom('ROOM42');
+    const leader = nextRoom.players.find((player) => player.id === 'leader');
+    const chaser = nextRoom.players.find((player) => player.id === 'chaser');
+
+    expect(leader?.hiddenOptionIndex).toBeGreaterThanOrEqual(0);
+    expect(leader?.hiddenOptionIndex).toBeLessThan(4);
+    expect(chaser?.hiddenOptionIndex).toBeUndefined();
+  });
+
+  it('lets the leader predict the jammed slot and cancel the blur', () => {
+    const engine = new GameEngine(() => 'ROOM42', () => 0.51);
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.updateSettings('ROOM42', { comebackMode: true });
+
+    for (let round = 0; round < 3; round += 1) {
+      const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 9000 + round * 20_000);
+      engine.revealRound('ROOM42');
+    }
+
+    engine.activateComebackAbility('ROOM42', 'chaser');
+    engine.activateComebackAbility('ROOM42', 'leader', 2);
+    const energyBefore = engine.getPublicRoom('ROOM42').players.find((player) => player.id === 'leader')?.comebackEnergy ?? 0;
+
+    engine.startNextRound('ROOM42', tracks, 10_000, 100_000);
+    const leader = engine.getPublicRoom('ROOM42').players.find((player) => player.id === 'leader');
+
+    expect(leader?.hiddenOptionIndex).toBeUndefined();
+    expect(leader?.comebackStatus).toBe('countered');
+    expect(leader?.comebackEnergy).toBeGreaterThan(energyBefore);
+
+    const activeQuestion = engine.getPublicRoom('ROOM42').currentQuestion!;
+    engine.submitAnswer('ROOM42', 'leader', activeQuestion.options[0].id, 101_000);
+    const revealed = engine.revealRound('ROOM42');
+    expect(revealed.achievements.some((achievement) => achievement.title === 'Контрразведка')).toBe(true);
   });
 
   it('creates a display room and makes the first joined player host', () => {

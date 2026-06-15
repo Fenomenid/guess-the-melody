@@ -53,6 +53,11 @@ export type Player = {
   correctAnswers: number;
   connected: boolean;
   isHost: boolean;
+  comebackEnergy: number;
+  pendingComebackAbility?: 'jammer' | 'counter';
+  counterPrediction?: number;
+  hiddenOptionIndex?: number;
+  comebackStatus?: 'armed' | 'jammed' | 'countered' | 'missed';
   lastAnswer?: PlayerAnswerResult;
 };
 
@@ -120,6 +125,12 @@ export type RoomSettings = {
   allowAnswerChange: boolean;
   autoNextRound: boolean;
   achievementsEnabled: boolean;
+  comebackMode: boolean;
+};
+
+export type ComebackState = {
+  queuedJammerPlayerId?: string;
+  queuedJammerPlayerName?: string;
 };
 
 export type PublicRoom = {
@@ -131,6 +142,7 @@ export type PublicRoom = {
   correctTrack?: Track;
   achievements: Achievement[];
   matchMoments: MatchMoment[];
+  comeback?: ComebackState;
   round: number;
   serverTime: number;
 };

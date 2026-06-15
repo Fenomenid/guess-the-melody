@@ -224,6 +224,21 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on(
+    'activate_comeback_ability',
+    async ({ code, playerId, counterPrediction }: { code: string; playerId: string; counterPrediction?: number }, callback) => {
+      try {
+        requireSocketPlayer(socket.id, code, playerId);
+        const room = engine.activateComebackAbility(code, playerId, counterPrediction);
+        await persistRooms();
+        callback?.({ data: room });
+        io.to(room.code).emit('room_state', room);
+      } catch (error) {
+        callback?.({ error: toClientError(error) });
+      }
+    }
+  );
+
   socket.on('kick_player', async ({ code, hostPlayerId, targetPlayerId }: { code: string; hostPlayerId: string; targetPlayerId: string }, callback) => {
     try {
       requireSocketPlayer(socket.id, code, hostPlayerId);
@@ -510,7 +525,8 @@ function parseSettings(value: unknown): Partial<RoomSettings> {
     questionDurationMs: typeof raw.questionDurationMs === 'number' ? raw.questionDurationMs : undefined,
     allowAnswerChange: typeof raw.allowAnswerChange === 'boolean' ? raw.allowAnswerChange : undefined,
     autoNextRound: typeof raw.autoNextRound === 'boolean' ? raw.autoNextRound : undefined,
-    achievementsEnabled: typeof raw.achievementsEnabled === 'boolean' ? raw.achievementsEnabled : undefined
+    achievementsEnabled: typeof raw.achievementsEnabled === 'boolean' ? raw.achievementsEnabled : undefined,
+    comebackMode: typeof raw.comebackMode === 'boolean' ? raw.comebackMode : undefined
   };
 }
 
