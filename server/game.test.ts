@@ -46,8 +46,9 @@ describe('GameEngine', () => {
     expect(chaser?.comebackEnergy).toBeGreaterThan(leader?.comebackEnergy ?? 0);
   });
 
-  it('arms one jammer that hides exactly one answer from the leader in the next round', () => {
-    const engine = new GameEngine(() => 'ROOM42');
+  it('arms one jammer that hides exactly two different answers from the leader in the next round', () => {
+    const randomValues = [0.1, 0.8];
+    const engine = new GameEngine(() => 'ROOM42', () => randomValues.shift() ?? 0.5);
     engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
     engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
     engine.updateSettings('ROOM42', { comebackMode: true });
@@ -67,13 +68,15 @@ describe('GameEngine', () => {
     const leader = nextRoom.players.find((player) => player.id === 'leader');
     const chaser = nextRoom.players.find((player) => player.id === 'chaser');
 
-    expect(leader?.hiddenOptionIndex).toBeGreaterThanOrEqual(0);
-    expect(leader?.hiddenOptionIndex).toBeLessThan(4);
-    expect(chaser?.hiddenOptionIndex).toBeUndefined();
+    expect(leader?.hiddenOptionIndexes).toHaveLength(2);
+    expect(new Set(leader?.hiddenOptionIndexes).size).toBe(2);
+    expect(leader?.hiddenOptionIndexes?.every((index) => index >= 0 && index < 4)).toBe(true);
+    expect(chaser?.hiddenOptionIndexes).toBeUndefined();
   });
 
-  it('lets the leader predict the jammed slot and cancel the blur', () => {
-    const engine = new GameEngine(() => 'ROOM42', () => 0.51);
+  it('lets the leader predict one jammed slot and reveal it', () => {
+    const randomValues = [0.51, 0.9];
+    const engine = new GameEngine(() => 'ROOM42', () => randomValues.shift() ?? 0.1);
     engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
     engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
     engine.updateSettings('ROOM42', { comebackMode: true });
@@ -92,7 +95,7 @@ describe('GameEngine', () => {
     engine.startNextRound('ROOM42', tracks, 10_000, 100_000);
     const leader = engine.getPublicRoom('ROOM42').players.find((player) => player.id === 'leader');
 
-    expect(leader?.hiddenOptionIndex).toBeUndefined();
+    expect(leader?.hiddenOptionIndexes).toEqual([3]);
     expect(leader?.comebackStatus).toBe('countered');
     expect(leader?.comebackEnergy).toBeGreaterThan(energyBefore);
 
@@ -100,6 +103,109 @@ describe('GameEngine', () => {
     engine.submitAnswer('ROOM42', 'leader', activeQuestion.options[0].id, 101_000);
     const revealed = engine.revealRound('ROOM42');
     expect(revealed.achievements.some((achievement) => achievement.title === 'Контрразведка')).toBe(true);
+  });
+
+  it('prevents the same player from arming Jammer twice in a row when at least three players are present', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.joinRoom('ROOM42', { playerId: 'other', playerName: 'Other' });
+    engine.updateSettings('ROOM42', { comebackMode: true });
+
+    for (let round = 0; round < 3; round += 1) {
+      const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 8000 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'other', question.correctOptionId, 8500 + round * 20_000);
+      engine.revealRound('ROOM42');
+    }
+
+    engine.activateComebackAbility('ROOM42', 'chaser');
+    const jammedQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 100_000);
+    engine.submitAnswer('ROOM42', 'leader', jammedQuestion.correctOptionId, 101_000);
+    engine.submitAnswer('ROOM42', 'chaser', jammedQuestion.correctOptionId, 108_000);
+    engine.submitAnswer('ROOM42', 'other', jammedQuestion.correctOptionId, 108_500);
+    engine.revealRound('ROOM42');
+
+    expect(() => engine.activateComebackAbility('ROOM42', 'chaser')).toThrow('another player');
+    expect(engine.activateComebackAbility('ROOM42', 'other').comeback?.queuedJammerPlayerId).toBe('other');
+  });
+
+  it('allows different chasers to stack Jammer and Timecut while one player can arm only one ability', () => {
+    const randomValues = [0.1, 0.8];
+    const engine = new GameEngine(() => 'ROOM42', () => randomValues.shift() ?? 0.5);
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.joinRoom('ROOM42', { playerId: 'other', playerName: 'Other' });
+    engine.updateSettings('ROOM42', { comebackMode: true });
+
+    for (let round = 0; round < 3; round += 1) {
+      const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 8000 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'other', question.correctOptionId, 8500 + round * 20_000);
+      engine.revealRound('ROOM42');
+    }
+
+    engine.activateComebackAbility('ROOM42', 'chaser', 'jammer');
+    expect(() => engine.activateComebackAbility('ROOM42', 'chaser', 'timecut')).toThrow('already has an ability');
+    const armed = engine.activateComebackAbility('ROOM42', 'other', 'timecut');
+
+    expect(armed.comeback?.queuedJammerPlayerId).toBe('chaser');
+    expect(armed.comeback?.queuedTimecutPlayerId).toBe('other');
+
+    const stackedQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 100_000);
+    const active = engine.getPublicRoom('ROOM42');
+    const leader = active.players.find((player) => player.id === 'leader');
+
+    expect(leader?.hiddenOptionIndexes).toHaveLength(2);
+    expect(leader?.reducedQuestionDurationMs).toBe(5_000);
+    expect(leader?.reducedQuestionEndsAt).toBe(105_000);
+    expect(leader?.timecutActive).toBe(true);
+    expect(() => engine.submitAnswer('ROOM42', 'leader', stackedQuestion.correctOptionId, 105_001)).toThrow('deadline');
+  });
+
+  it('does not reduce leader time below five seconds', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.updateSettings('ROOM42', { comebackMode: true });
+
+    for (let round = 0; round < 3; round += 1) {
+      const question = engine.startNextRound('ROOM42', tracks, 8_000, 1000 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 7000 + round * 20_000);
+      engine.revealRound('ROOM42');
+    }
+
+    engine.activateComebackAbility('ROOM42', 'chaser', 'timecut');
+    engine.startNextRound('ROOM42', tracks, 8_000, 100_000);
+
+    const leader = engine.getPublicRoom('ROOM42').players.find((player) => player.id === 'leader');
+    expect(leader?.reducedQuestionDurationMs).toBe(5_000);
+  });
+
+  it('doubles correct points for the last-place player in Revansh games with at least three players', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'middle', playerName: 'Middle' });
+    engine.joinRoom('ROOM42', { playerId: 'last', playerName: 'Last' });
+    engine.updateSettings('ROOM42', { comebackMode: true });
+
+    const firstQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.submitAnswer('ROOM42', 'leader', firstQuestion.correctOptionId, 1100);
+    engine.submitAnswer('ROOM42', 'middle', firstQuestion.correctOptionId, 5000);
+    engine.revealRound('ROOM42');
+
+    const comebackQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 30_000);
+    const result = engine.submitAnswer('ROOM42', 'last', comebackQuestion.correctOptionId, 32_000);
+
+    expect(result.scoreMultiplier).toBe(2);
+    expect(result.scoreNote).toMatch(/^x2,/);
+    expect(result.points).toBe(result.basePoints * 2);
+
+    const revealed = engine.revealRound('ROOM42');
+    expect(revealed.achievements.some((achievement) => achievement.title === 'Последний, но опасный')).toBe(true);
   });
 
   it('creates a display room and makes the first joined player host', () => {

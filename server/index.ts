@@ -226,10 +226,10 @@ io.on('connection', (socket) => {
 
   socket.on(
     'activate_comeback_ability',
-    async ({ code, playerId, counterPrediction }: { code: string; playerId: string; counterPrediction?: number }, callback) => {
+    async ({ code, playerId, ability, counterPrediction }: { code: string; playerId: string; ability?: 'jammer' | 'counter' | 'timecut'; counterPrediction?: number }, callback) => {
       try {
         requireSocketPlayer(socket.id, code, playerId);
-        const room = engine.activateComebackAbility(code, playerId, counterPrediction);
+        const room = engine.activateComebackAbility(code, playerId, ability, counterPrediction);
         await persistRooms();
         callback?.({ data: room });
         io.to(room.code).emit('room_state', room);

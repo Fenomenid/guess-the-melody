@@ -54,9 +54,14 @@ type PlayerAnswerResult = {
   firstResponseMs: number;
   lastResponseMs: number;
   points: number;
+  basePoints: number;
+  scoreMultiplier?: number;
+  scoreNote?: string;
   answerChanges: number;
   answerEvents: AnswerEvent[];
 };
+
+type ComebackAbility = 'jammer' | 'counter' | 'timecut';
 
 type Player = {
   id: string;
@@ -66,9 +71,12 @@ type Player = {
   connected: boolean;
   isHost: boolean;
   comebackEnergy: number;
-  pendingComebackAbility?: 'jammer' | 'counter';
+  pendingComebackAbility?: ComebackAbility;
   counterPrediction?: number;
-  hiddenOptionIndex?: number;
+  hiddenOptionIndexes?: number[];
+  reducedQuestionDurationMs?: number;
+  reducedQuestionEndsAt?: number;
+  timecutActive?: boolean;
   comebackStatus?: 'armed' | 'jammed' | 'countered' | 'missed';
   lastAnswer?: { hasAnswered: true; responseMs: number; firstResponseMs: number; lastResponseMs: number; answerChanges: number } | PlayerAnswerResult;
 };
@@ -146,6 +154,12 @@ type Room = {
   comeback?: {
     queuedJammerPlayerId?: string;
     queuedJammerPlayerName?: string;
+    queuedTimecutPlayerId?: string;
+    queuedTimecutPlayerName?: string;
+    lastJammerPlayerId?: string;
+    lastJammerPlayerName?: string;
+    lastTimecutPlayerId?: string;
+    lastTimecutPlayerName?: string;
   };
   round: number;
   serverTime: number;
@@ -462,13 +476,13 @@ function App() {
     emit('submit_answer', { code: room.code, playerId, optionId }, undefined, 'Фиксируем ответ');
   }
 
-  function activateComebackAbility(counterPrediction?: number) {
+  function activateComebackAbility(ability: ComebackAbility, counterPrediction?: number) {
     if (!room) return;
     emit<Room>(
       'activate_comeback_ability',
-      { code: room.code, playerId, counterPrediction },
+      { code: room.code, playerId, ability, counterPrediction },
       setRoom,
-      counterPrediction === undefined ? 'Заряжаем Глушилку' : 'Настраиваем Контрмеру'
+      ability === 'counter' ? 'Настраиваем Контрмеру' : ability === 'timecut' ? 'Заряжаем Ускоритель' : 'Заряжаем Глушилку'
     );
   }
 
@@ -1012,7 +1026,7 @@ function Lobby({
             <span>
               <strong>Реванш <em className="beta-label">(beta)</em></strong>
               <small>
-                За правильные ответы копится энергия. После раунда отстающие заряжают Глушилку, а лидер может предсказать скрытый слот Контрмерой. Способности срабатывают в следующем раунде.
+                За правильные ответы копится энергия. Глушилка скрывает у лидера два случайных варианта, а Контрмера раскрывает один угаданный слот. При трёх игроках и больше Глушилку нельзя применять два раза подряд.
               </small>
             </span>
           </label>
@@ -1495,7 +1509,7 @@ function PlayerRoom({
   onAudioNeedsGestureChange: (needsGesture: boolean) => void;
   onSettingsChange: (settings: Partial<Room['settings']>) => void;
   onSubmit: (optionId: string) => void;
-  onActivateComebackAbility: (counterPrediction?: number) => void;
+  onActivateComebackAbility: (ability: ComebackAbility, counterPrediction?: number) => void;
 }) {
   return (
     <main className="page player-page">
@@ -1563,7 +1577,7 @@ function PlayerRoundResult({
 }: {
   room: Room;
   me?: Player;
-  onActivateComebackAbility: (counterPrediction?: number) => void;
+  onActivateComebackAbility: (ability: ComebackAbility, counterPrediction?: number) => void;
 }) {
   const optionId = me && hasRevealedAnswer(me) ? me.lastAnswer.optionId : undefined;
   const selectedTitle = room.currentQuestion?.options.find((option) => option.id === optionId)?.title;
@@ -1677,14 +1691,14 @@ function PlayerQuestionStage({
               'answer-button',
               selectedOptionId === option.id ? 'selected-answer' : '',
               isAnswerLocked ? 'locked-answer' : '',
-              me?.hiddenOptionIndex === index ? 'jammed-answer' : ''
+              me?.hiddenOptionIndexes?.includes(index) ? 'jammed-answer' : ''
             ].filter(Boolean).join(' ')}
             key={option.id}
             onClick={() => onSubmit(option.id)}
             disabled={isAnswerLocked}
-            aria-label={me?.hiddenOptionIndex === index ? `Скрытый вариант ${index + 1}` : option.title}
+            aria-label={me?.hiddenOptionIndexes?.includes(index) ? `Скрытый вариант ${index + 1}` : option.title}
           >
-            <AnswerOptionLabel title={option.title} hidden={me?.hiddenOptionIndex === index} />
+            <AnswerOptionLabel title={option.title} hidden={Boolean(me?.hiddenOptionIndexes?.includes(index))} />
             {selectedOptionId === option.id && <span className="answer-picked" aria-label="Выбрано">✓</span>}
           </button>
         ))}
@@ -1921,7 +1935,7 @@ function QuestionStage({
   onSubmit: (optionId: string) => void;
 }) {
   const question = room.currentQuestion!;
-  const countdown = useQuestionCountdown(question, room.serverTime);
+  const countdown = useQuestionCountdown(question, room.serverTime, me?.reducedQuestionDurationMs, me?.reducedQuestionEndsAt);
   const [audioIssue, setAudioIssue] = useState('');
 
   function playAudio() {
@@ -1959,7 +1973,7 @@ function QuestionStage({
         <span>{me?.lastAnswer ? 'Ответ принят' : answerModePrompt(room.settings.answerMode)}</span>
       </div>
       <div className="music-visual">
-        <div className="countdown-ring" style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
+        <div className={['countdown-ring', me?.timecutActive ? 'timecut-countdown' : ''].filter(Boolean).join(' ')} style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
           <Timer size={26} />
           <strong>{countdown.secondsLeft}</strong>
           <span>сек</span>
@@ -1974,6 +1988,12 @@ function QuestionStage({
           <Equalizer />
         </div>
       </div>
+      {me?.timecutActive && (
+        <div className="notice timecut-notice">
+          <Timer size={18} />
+          <span>Ускоритель: у вас времени в 2 раза меньше, минимум 5 секунд.</span>
+        </div>
+      )}
       {audioIssue && (
         <div className="notice audio-notice">
           <VolumeX size={18} />
@@ -1991,16 +2011,16 @@ function QuestionStage({
               'answer-button',
               selectedOptionId === option.id ? 'selected-answer' : '',
               me?.lastAnswer && !room.settings.allowAnswerChange ? 'locked-answer' : '',
-              me?.hiddenOptionIndex === index ? 'jammed-answer' : ''
+              me?.hiddenOptionIndexes?.includes(index) ? 'jammed-answer' : ''
             ]
               .filter(Boolean)
               .join(' ')}
             key={option.id}
             onClick={() => onSubmit(option.id)}
             disabled={Boolean(me?.lastAnswer && !room.settings.allowAnswerChange)}
-            aria-label={me?.hiddenOptionIndex === index ? `Скрытый вариант ${index + 1}` : option.title}
+            aria-label={me?.hiddenOptionIndexes?.includes(index) ? `Скрытый вариант ${index + 1}` : option.title}
           >
-            <AnswerOptionLabel title={option.title} hidden={me?.hiddenOptionIndex === index} />
+            <AnswerOptionLabel title={option.title} hidden={Boolean(me?.hiddenOptionIndexes?.includes(index))} />
             {selectedOptionId === option.id && <span className="answer-picked" aria-label="Выбрано">✓</span>}
           </button>
         ))}
@@ -2035,25 +2055,32 @@ function ComebackAbilityPanel({
 }: {
   room: Room;
   player: Player;
-  onActivate: (counterPrediction?: number) => void;
+  onActivate: (ability: ComebackAbility, counterPrediction?: number) => void;
 }) {
   const leader = [...room.players].sort(
     (left, right) => right.score - left.score || right.correctAnswers - left.correctAnswers || left.name.localeCompare(right.name, 'ru')
   )[0];
   const isLeader = leader?.id === player.id;
-  const cost = isLeader ? 45 : 60;
+  const counterCost = 45;
+  const abilityCost = 60;
   const isArmed = player.pendingComebackAbility !== undefined;
   const jammerOwner = room.comeback?.queuedJammerPlayerId;
+  const timecutOwner = room.comeback?.queuedTimecutPlayerId;
   const jammerTaken = Boolean(jammerOwner && jammerOwner !== player.id);
-  const canActivate = player.comebackEnergy >= cost && !isArmed && (isLeader ? Boolean(jammerOwner) : !jammerTaken);
+  const timecutTaken = Boolean(timecutOwner && timecutOwner !== player.id);
+  const isJammerCooldown = room.players.length >= 3 && room.comeback?.lastJammerPlayerId === player.id;
+  const isTimecutCooldown = room.players.length >= 3 && room.comeback?.lastTimecutPlayerId === player.id;
+  const canCounter = player.comebackEnergy >= counterCost && !isArmed && isLeader && Boolean(jammerOwner);
+  const canUseJammer = player.comebackEnergy >= abilityCost && !isArmed && !isLeader && !jammerTaken && !isJammerCooldown && !jammerOwner;
+  const canUseTimecut = player.comebackEnergy >= abilityCost && !isArmed && !isLeader && !timecutTaken && !isTimecutCooldown && !timecutOwner;
 
   return (
-    <section className={['comeback-panel', isArmed ? 'armed' : ''].filter(Boolean).join(' ')}>
+    <section className={['comeback-panel', isArmed ? 'armed' : '', player.comebackStatus === 'countered' ? 'counter-success' : ''].filter(Boolean).join(' ')}>
       <div className="comeback-heading">
         <span className="comeback-icon"><BatteryCharging size={22} /></span>
         <div>
           <strong>Реванш <em className="beta-label">(beta)</em></strong>
-          <small>Способность сработает в следующем раунде</small>
+          <small>Способность сработает автоматически в следующем раунде</small>
         </div>
         <b>{player.comebackEnergy}/100</b>
       </div>
@@ -2066,16 +2093,16 @@ function ComebackAbilityPanel({
           <strong>Контрмера · 45 энергии</strong>
           <small>
             {jammerOwner
-              ? 'Глушилка уже заряжена. Предскажите номер кнопки: точный прогноз отменит помеху и вернёт 25 энергии.'
+              ? 'Глушилка уже заряжена. Предскажите один из двух скрываемых слотов: точный прогноз раскроет его и вернёт 25 энергии.'
               : 'Контрмера станет доступна, когда кто-то зарядит Глушилку на следующий раунд.'}
           </small>
           <div className="counter-slots" aria-label="Выбор слота Контрмеры">
             {[0, 1, 2, 3].map((slot) => (
               <button
                 type="button"
-                className={player.counterPrediction === slot ? 'active' : ''}
-                disabled={!canActivate}
-                onClick={() => onActivate(slot)}
+                className={[player.counterPrediction === slot ? 'active' : '', canCounter ? 'ready' : ''].filter(Boolean).join(' ')}
+                disabled={!canCounter}
+                onClick={() => onActivate('counter', slot)}
                 key={slot}
               >
                 {slot + 1}
@@ -2084,19 +2111,44 @@ function ComebackAbilityPanel({
           </div>
         </div>
       ) : (
-        <div className="ability-copy">
-          <strong>Глушилка · 60 энергии</strong>
-          <small>Скроет текст одного случайного варианта у лидера. Скрытый вариант может оказаться правильным.</small>
-          <button className="ability-button" type="button" disabled={!canActivate} onClick={() => onActivate()}>
-            <ScanLine size={18} />
-            {isArmed ? 'Глушилка заряжена' : jammerTaken ? `Уже зарядил ${room.comeback?.queuedJammerPlayerName}` : 'Зарядить на следующий раунд'}
-          </button>
+        <div className="ability-grid">
+          <div className="ability-copy">
+            <strong>Глушилка · 60 энергии</strong>
+            <small>Скроет текст двух разных случайных вариантов у лидера. Правильный ответ тоже может попасть под помеху.</small>
+            <button className={['ability-button', canUseJammer ? 'ready' : ''].filter(Boolean).join(' ')} type="button" disabled={!canUseJammer} onClick={() => onActivate('jammer')}>
+              <ScanLine size={18} />
+              {player.pendingComebackAbility === 'jammer'
+                ? 'Глушилка заряжена'
+                : jammerTaken
+                  ? `Уже зарядил ${room.comeback?.queuedJammerPlayerName}`
+                  : isJammerCooldown
+                    ? 'Сейчас очередь другого игрока'
+                    : 'Зарядить на следующий раунд'}
+            </button>
+          </div>
+          <div className="ability-copy">
+            <strong>Ускоритель · 60 энергии</strong>
+            <small>Сократит время лидера на песню в 2 раза, но не ниже 5 секунд.</small>
+            <button className={['ability-button', 'timecut-button', canUseTimecut ? 'ready' : ''].filter(Boolean).join(' ')} type="button" disabled={!canUseTimecut} onClick={() => onActivate('timecut')}>
+              <Timer size={18} />
+              {player.pendingComebackAbility === 'timecut'
+                ? 'Ускоритель заряжен'
+                : timecutTaken
+                  ? `Уже зарядил ${room.comeback?.queuedTimecutPlayerName}`
+                  : isTimecutCooldown
+                    ? 'Сейчас очередь другого игрока'
+                    : 'Урезать таймер лидеру'}
+            </button>
+          </div>
         </div>
       )}
 
       {isArmed && <div className="ability-armed-notice">Заряд принят. Эффект применится автоматически при старте следующего раунда.</div>}
-      {player.comebackStatus === 'countered' && <div className="ability-success-notice">Контрмера сработала: помеха отменена, +25 энергии.</div>}
-      {player.comebackStatus === 'missed' && <div className="ability-missed-notice">Прогноз не совпал. Один вариант будет скрыт.</div>}
+      {(isJammerCooldown || isTimecutCooldown) && !isLeader && !isArmed && (
+        <div className="ability-missed-notice">Вы уже использовали прошлый заряд этого типа. При трёх игроках и больше следующий такой скилл должен сделать кто-то другой.</div>
+      )}
+      {player.comebackStatus === 'countered' && <div className="ability-success-notice">Контрмера сработала: один слот раскрыт, +25 энергии.</div>}
+      {player.comebackStatus === 'missed' && <div className="ability-missed-notice">Прогноз не совпал. Два варианта будут скрыты.</div>}
     </section>
   );
 }
@@ -2113,7 +2165,7 @@ function ResultStage({
   isHost: boolean;
   playerId: string;
   emit: <T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label?: string) => void;
-  onActivateComebackAbility?: (counterPrediction?: number) => void;
+  onActivateComebackAbility?: (ability: ComebackAbility, counterPrediction?: number) => void;
   onResetToLobby?: () => void;
 }) {
   const nextRoundCountdown = useAutoNextCountdown(room.status, room.round, room.settings.autoNextRound);
@@ -2166,6 +2218,7 @@ function ResultStage({
             {hasRevealedAnswer(player) ? (
               <b className={['score-pop', player.lastAnswer.points < 0 ? 'penalty' : ''].filter(Boolean).join(' ')}>
                 {formatSignedPoints(player.lastAnswer.points)}
+                {player.lastAnswer.scoreNote && <small className="score-note">({player.lastAnswer.scoreNote})</small>}
               </b>
             ) : (
               <small>0</small>
@@ -2257,7 +2310,10 @@ function FinalStage({
               {player.name}
               <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>{selectedOptionTitle(player)}</small>
             </strong>
-            <small>{hasRevealedAnswer(player) && player.lastAnswer.points ? formatSignedPoints(player.lastAnswer.points) : '0'}</small>
+            <small>
+              {hasRevealedAnswer(player) && player.lastAnswer.points ? formatSignedPoints(player.lastAnswer.points) : '0'}
+              {hasRevealedAnswer(player) && player.lastAnswer.scoreNote && <span className="score-note">({player.lastAnswer.scoreNote})</span>}
+            </small>
             <em>{player.score}</em>
           </div>
         ))}
@@ -2458,7 +2514,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, serverTime: number) {
+function useQuestionCountdown(
+  question: NonNullable<Room['currentQuestion']>,
+  serverTime: number,
+  durationOverrideMs?: number,
+  endsAtOverride?: number
+) {
   const [now, setNow] = useState(() => Date.now());
   const serverOffsetRef = useRef(0);
 
@@ -2479,8 +2540,9 @@ function useQuestionCountdown(question: NonNullable<Room['currentQuestion']>, se
   }, [question.id, serverTime]);
 
   const adjustedNow = now + serverOffsetRef.current;
-  const durationMs = Math.max(1, question.durationMs);
-  const remaining = Math.max(0, question.endsAt - adjustedNow);
+  const durationMs = Math.max(1, durationOverrideMs ?? question.durationMs);
+  const endsAt = endsAtOverride ?? question.endsAt;
+  const remaining = Math.max(0, endsAt - adjustedNow);
   const progress = clamp(remaining / durationMs, 0, 1);
 
   return {

@@ -54,12 +54,17 @@ export type Player = {
   connected: boolean;
   isHost: boolean;
   comebackEnergy: number;
-  pendingComebackAbility?: 'jammer' | 'counter';
+  pendingComebackAbility?: ComebackAbility;
   counterPrediction?: number;
-  hiddenOptionIndex?: number;
+  hiddenOptionIndexes?: number[];
+  reducedQuestionDurationMs?: number;
+  reducedQuestionEndsAt?: number;
+  timecutActive?: boolean;
   comebackStatus?: 'armed' | 'jammed' | 'countered' | 'missed';
   lastAnswer?: PlayerAnswerResult;
 };
+
+export type ComebackAbility = 'jammer' | 'counter' | 'timecut';
 
 export type PlayerAnswerResult = {
   optionId: string;
@@ -70,6 +75,9 @@ export type PlayerAnswerResult = {
   firstResponseMs: number;
   lastResponseMs: number;
   points: number;
+  basePoints: number;
+  scoreMultiplier?: number;
+  scoreNote?: string;
   answerChanges: number;
   answerEvents: AnswerEvent[];
 };
@@ -131,6 +139,12 @@ export type RoomSettings = {
 export type ComebackState = {
   queuedJammerPlayerId?: string;
   queuedJammerPlayerName?: string;
+  queuedTimecutPlayerId?: string;
+  queuedTimecutPlayerName?: string;
+  lastJammerPlayerId?: string;
+  lastJammerPlayerName?: string;
+  lastTimecutPlayerId?: string;
+  lastTimecutPlayerName?: string;
 };
 
 export type PublicRoom = {

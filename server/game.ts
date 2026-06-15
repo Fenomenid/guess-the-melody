@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   Achievement,
   ComebackState,
+  ComebackAbility,
   MatchMoment,
   Player,
   PlayerAnswerResult,
@@ -108,8 +109,10 @@ const MIN_CORRECT_POINTS = 100;
 const MAX_WRONG_PENALTY = 150;
 const MAX_COMEBACK_ENERGY = 100;
 const JAMMER_COST = 60;
+const TIMECUT_COST = 60;
 const COUNTER_COST = 45;
 const COUNTER_REWARD = 25;
+const MIN_TIMECUT_DURATION_MS = 5_000;
 
 export class GameEngine {
   private readonly rooms = new Map<string, Room>();
@@ -243,7 +246,7 @@ export class GameEngine {
     return toPublicRoom(room, room.status === 'round-result');
   }
 
-  activateComebackAbility(code: string, playerId: string, counterPrediction?: number): PublicRoom {
+  activateComebackAbility(code: string, playerId: string, ability: ComebackAbility | number = 'jammer', counterPrediction?: number): PublicRoom {
     const room = this.requireRoom(code);
     if (!room.settings.comebackMode) {
       throw new Error('Revansh mode is disabled');
@@ -262,39 +265,78 @@ export class GameEngine {
       throw new Error('No leader is available');
     }
 
-    if (leader.id === player.id) {
+    const selectedAbility: ComebackAbility = typeof ability === 'number' ? 'counter' : ability;
+    const selectedCounterPrediction = typeof ability === 'number' ? ability : counterPrediction;
+
+    if (leader.id === player.id || selectedAbility === 'counter') {
+      if (leader.id !== player.id) {
+        throw new Error('Only the leader can arm Countermeasure');
+      }
       if (!room.comeback.queuedJammerPlayerId) {
         throw new Error('Countermeasure can only be armed against a queued Jammer');
       }
-      if (!Number.isInteger(counterPrediction) || counterPrediction! < 0 || counterPrediction! > 3) {
+      if (!Number.isInteger(selectedCounterPrediction) || selectedCounterPrediction! < 0 || selectedCounterPrediction! > 3) {
         throw new Error('Choose an answer slot from 1 to 4');
       }
-      if (player.pendingComebackAbility === 'counter') {
-        throw new Error('Countermeasure is already armed');
+      if (player.pendingComebackAbility) {
+        throw new Error('Player already has an ability armed');
       }
       if (player.comebackEnergy < COUNTER_COST) {
         throw new Error('Not enough energy for Countermeasure');
       }
       player.comebackEnergy -= COUNTER_COST;
       player.pendingComebackAbility = 'counter';
-      player.counterPrediction = counterPrediction;
+      player.counterPrediction = selectedCounterPrediction;
       player.comebackStatus = 'armed';
       return toPublicRoom(room, true);
     }
 
-    if (room.comeback.queuedJammerPlayerId) {
-      throw new Error('Jammer is already armed for the next round');
-    }
-    if (player.comebackEnergy < JAMMER_COST) {
-      throw new Error('Not enough energy for Jammer');
+    if (player.pendingComebackAbility) {
+      throw new Error('Player already has an ability armed');
     }
 
-    player.comebackEnergy -= JAMMER_COST;
-    player.pendingComebackAbility = 'jammer';
+    if (selectedAbility === 'jammer') {
+      if (room.comeback.queuedJammerPlayerId) {
+        throw new Error('Jammer is already armed for the next round');
+      }
+      if (room.players.size >= 3 && room.comeback.lastJammerPlayerId === player.id) {
+        throw new Error('Let another player use Jammer before using it again');
+      }
+      if (player.comebackEnergy < JAMMER_COST) {
+        throw new Error('Not enough energy for Jammer');
+      }
+
+      player.comebackEnergy -= JAMMER_COST;
+      player.pendingComebackAbility = 'jammer';
+      player.comebackStatus = 'armed';
+      room.comeback = {
+        ...room.comeback,
+        queuedJammerPlayerId: player.id,
+        queuedJammerPlayerName: player.name
+      };
+      return toPublicRoom(room, true);
+    }
+
+    if (selectedAbility !== 'timecut') {
+      throw new Error('Unknown comeback ability');
+    }
+    if (room.comeback.queuedTimecutPlayerId) {
+      throw new Error('Timecut is already armed for the next round');
+    }
+    if (room.players.size >= 3 && room.comeback.lastTimecutPlayerId === player.id) {
+      throw new Error('Let another player use Timecut before using it again');
+    }
+    if (player.comebackEnergy < TIMECUT_COST) {
+      throw new Error('Not enough energy for Timecut');
+    }
+
+    player.comebackEnergy -= TIMECUT_COST;
+    player.pendingComebackAbility = 'timecut';
     player.comebackStatus = 'armed';
     room.comeback = {
-      queuedJammerPlayerId: player.id,
-      queuedJammerPlayerName: player.name
+      ...room.comeback,
+      queuedTimecutPlayerId: player.id,
+      queuedTimecutPlayerName: player.name
     };
     return toPublicRoom(room, true);
   }
@@ -340,7 +382,10 @@ export class GameEngine {
 
     for (const player of room.players.values()) {
       player.lastAnswer = undefined;
-      player.hiddenOptionIndex = undefined;
+      player.hiddenOptionIndexes = undefined;
+      player.reducedQuestionDurationMs = undefined;
+      player.reducedQuestionEndsAt = undefined;
+      player.timecutActive = undefined;
       if (player.comebackStatus !== 'armed') {
         player.comebackStatus = undefined;
       }
@@ -381,7 +426,8 @@ export class GameEngine {
     if (!room.currentQuestion || room.status !== 'question') {
       throw new Error('No active question');
     }
-    if (now > room.currentQuestion.endsAt) {
+    const playerDeadline = player.reducedQuestionEndsAt ?? room.currentQuestion.endsAt;
+    if (now > playerDeadline) {
       throw new Error('Answer deadline has passed');
     }
     if (player.lastAnswer && !room.settings.allowAnswerChange) {
@@ -396,9 +442,12 @@ export class GameEngine {
     const previousAnswer = player.lastAnswer;
     const answerChanges = previousAnswer ? previousAnswer.answerChanges + 1 : 0;
     const penalty = answerChanges * ANSWER_CHANGE_PENALTY;
-    const points = isCorrect
-      ? Math.max(MIN_CORRECT_POINTS, calculatePoints(responseMs, room.currentQuestion.durationMs) - penalty)
+    const scoringDurationMs = player.reducedQuestionDurationMs ?? room.currentQuestion.durationMs;
+    const basePoints = isCorrect
+      ? Math.max(MIN_CORRECT_POINTS, calculatePoints(responseMs, scoringDurationMs) - penalty)
       : -Math.min(MAX_WRONG_PENALTY, penalty);
+    const scoreBoost = comebackLastPlaceBoost(room, player, isCorrect, basePoints);
+    const points = Math.round(basePoints * scoreBoost.multiplier);
     const answerEvents = [...(previousAnswer?.answerEvents ?? []), { optionId, responseMs }];
 
     player.lastAnswer = {
@@ -410,6 +459,9 @@ export class GameEngine {
       firstResponseMs: previousAnswer?.firstResponseMs ?? responseMs,
       lastResponseMs: responseMs,
       points,
+      basePoints,
+      scoreMultiplier: scoreBoost.multiplier > 1 ? scoreBoost.multiplier : undefined,
+      scoreNote: scoreBoost.note,
       answerChanges,
       answerEvents
     };
@@ -436,7 +488,10 @@ export class GameEngine {
       player.comebackEnergy = 0;
       player.pendingComebackAbility = undefined;
       player.counterPrediction = undefined;
-      player.hiddenOptionIndex = undefined;
+      player.hiddenOptionIndexes = undefined;
+      player.reducedQuestionDurationMs = undefined;
+      player.reducedQuestionEndsAt = undefined;
+      player.timecutActive = undefined;
       player.comebackStatus = undefined;
       player.lastAnswer = undefined;
     }
@@ -541,7 +596,10 @@ export class GameEngine {
               lastAnswer: undefined,
               pendingComebackAbility: undefined,
               counterPrediction: undefined,
-              hiddenOptionIndex: undefined,
+              hiddenOptionIndexes: undefined,
+              reducedQuestionDurationMs: undefined,
+              reducedQuestionEndsAt: undefined,
+              timecutActive: undefined,
               comebackStatus: undefined
             }
           ])
@@ -602,31 +660,57 @@ export class GameEngine {
   }
 
   private applyComebackEffects(room: Room): void {
-    if (!room.settings.comebackMode || !room.comeback.queuedJammerPlayerId) {
+    if (!room.settings.comebackMode || (!room.comeback.queuedJammerPlayerId && !room.comeback.queuedTimecutPlayerId)) {
       return;
     }
 
-    const attacker = room.players.get(room.comeback.queuedJammerPlayerId);
     const leader = rankedPlayers(room)[0];
-    if (!attacker || !leader) {
+    if (!leader || !room.currentQuestion) {
       room.comeback = {};
       return;
     }
 
-    const hiddenOptionIndex = Math.min(3, Math.floor(this.random() * 4));
-    if (leader.pendingComebackAbility === 'counter' && leader.counterPrediction === hiddenOptionIndex) {
-      leader.comebackEnergy = Math.min(MAX_COMEBACK_ENERGY, leader.comebackEnergy + COUNTER_REWARD);
-      leader.comebackStatus = 'countered';
-    } else {
-      leader.hiddenOptionIndex = hiddenOptionIndex;
-      leader.comebackStatus = leader.pendingComebackAbility === 'counter' ? 'missed' : 'jammed';
+    const nextComeback: ComebackState = {};
+
+    const jammer = room.comeback.queuedJammerPlayerId ? room.players.get(room.comeback.queuedJammerPlayerId) : undefined;
+    if (jammer) {
+      const firstHiddenIndex = Math.min(3, Math.floor(this.random() * 4));
+      let secondHiddenIndex = Math.min(3, Math.floor(this.random() * 4));
+      if (secondHiddenIndex === firstHiddenIndex) {
+        secondHiddenIndex = (firstHiddenIndex + 1) % 4;
+      }
+      const hiddenOptionIndexes = [firstHiddenIndex, secondHiddenIndex];
+
+      if (leader.pendingComebackAbility === 'counter' && hiddenOptionIndexes.includes(leader.counterPrediction!)) {
+        leader.comebackEnergy = Math.min(MAX_COMEBACK_ENERGY, leader.comebackEnergy + COUNTER_REWARD);
+        leader.comebackStatus = 'countered';
+        leader.hiddenOptionIndexes = hiddenOptionIndexes.filter((index) => index !== leader.counterPrediction);
+      } else {
+        leader.hiddenOptionIndexes = hiddenOptionIndexes;
+        leader.comebackStatus = leader.pendingComebackAbility === 'counter' ? 'missed' : 'jammed';
+      }
+
+      jammer.pendingComebackAbility = undefined;
+      jammer.comebackStatus = undefined;
+      leader.pendingComebackAbility = undefined;
+      leader.counterPrediction = undefined;
+      nextComeback.lastJammerPlayerId = jammer.id;
+      nextComeback.lastJammerPlayerName = jammer.name;
     }
 
-    attacker.pendingComebackAbility = undefined;
-    attacker.comebackStatus = undefined;
-    leader.pendingComebackAbility = undefined;
-    leader.counterPrediction = undefined;
-    room.comeback = {};
+    const timecutter = room.comeback.queuedTimecutPlayerId ? room.players.get(room.comeback.queuedTimecutPlayerId) : undefined;
+    if (timecutter) {
+      const reducedDurationMs = Math.max(MIN_TIMECUT_DURATION_MS, Math.floor(room.currentQuestion.durationMs / 2));
+      leader.reducedQuestionDurationMs = reducedDurationMs;
+      leader.reducedQuestionEndsAt = room.currentQuestion.startedAt + reducedDurationMs;
+      leader.timecutActive = true;
+      timecutter.pendingComebackAbility = undefined;
+      timecutter.comebackStatus = undefined;
+      nextComeback.lastTimecutPlayerId = timecutter.id;
+      nextComeback.lastTimecutPlayerName = timecutter.name;
+    }
+
+    room.comeback = nextComeback;
   }
 
   private ensureHost(room: Room): void {
@@ -883,14 +967,50 @@ function buildRevealAchievements(room: Room): Achievement[] {
           id: `revansh-countered-${round}-${player.id}`,
           icon: '🛡',
           title: 'Контрразведка',
-          description: `${player.name} точно предсказал скрываемый слот и отменил Глушилку.`,
+          description: `${player.name} точно предсказал один из скрываемых слотов и раскрыл его.`,
           recipient: player.name,
           tone: 'rare',
           weight: 96
         });
       }
 
-      if (player.hiddenOptionIndex === undefined || !player.lastAnswer.isCorrect) {
+      if (player.timecutActive && player.lastAnswer.isCorrect) {
+        achievements.push({
+          id: `revansh-timecut-correct-${round}-${player.id}`,
+          icon: '⏱',
+          title: 'На полтаймера',
+          description: `${player.name} угадал с урезанным временем.`,
+          recipient: player.name,
+          tone: 'rare',
+          weight: 94
+        });
+      }
+
+      if (player.timecutActive && player.hiddenOptionIndexes?.length) {
+        achievements.push({
+          id: `revansh-double-pressure-${round}-${player.id}`,
+          icon: '⚡',
+          title: 'Двойной прессинг',
+          description: `${player.name} пережил раунд с ускорителем и скрытыми вариантами.`,
+          recipient: player.name,
+          tone: player.lastAnswer.isCorrect ? 'rare' : 'chaos',
+          weight: player.lastAnswer.isCorrect ? 99 : 82
+        });
+      }
+
+      if (player.lastAnswer.scoreMultiplier && player.lastAnswer.scoreMultiplier > 1) {
+        achievements.push({
+          id: `revansh-last-boost-${round}-${player.id}`,
+          icon: '×2',
+          title: 'Последний, но опасный',
+          description: `${player.name} шел последним и забрал двойные очки.`,
+          recipient: player.name,
+          tone: 'good',
+          weight: 91
+        });
+      }
+
+      if (!player.hiddenOptionIndexes?.length || !player.lastAnswer.isCorrect) {
         continue;
       }
 
@@ -898,14 +1018,14 @@ function buildRevealAchievements(room: Room): Achievement[] {
       achievements.push({
         id: `revansh-jammed-correct-${round}-${player.id}`,
         icon: '⚡',
-        title: selectedIndex === player.hiddenOptionIndex ? 'На ощупь' : 'Не заглушить',
+        title: player.hiddenOptionIndexes.includes(selectedIndex) ? 'На ощупь' : 'Не заглушить',
         description:
-          selectedIndex === player.hiddenOptionIndex
+          player.hiddenOptionIndexes.includes(selectedIndex)
             ? `${player.name} выбрал скрытый вариант и всё равно угадал.`
             : `${player.name} ответил правильно под действием Глушилки.`,
         recipient: player.name,
-        tone: selectedIndex === player.hiddenOptionIndex ? 'rare' : 'good',
-        weight: selectedIndex === player.hiddenOptionIndex ? 98 : 88
+        tone: player.hiddenOptionIndexes.includes(selectedIndex) ? 'rare' : 'good',
+        weight: player.hiddenOptionIndexes.includes(selectedIndex) ? 98 : 88
       });
     }
   }
@@ -1518,6 +1638,27 @@ function pickVariant(key: string, variants: string[]): string {
     hash = (hash * 31 + key.charCodeAt(index)) >>> 0;
   }
   return variants[hash % variants.length];
+}
+
+function comebackLastPlaceBoost(room: Room, player: Player, isCorrect: boolean, basePoints: number): { multiplier: number; note?: string } {
+  if (!room.settings.comebackMode || room.players.size < 3 || !isCorrect || basePoints <= 0) {
+    return { multiplier: 1 };
+  }
+
+  const scores = [...room.players.values()].map((candidate) => candidate.score);
+  const lowestScore = Math.min(...scores);
+  const highestScore = Math.max(...scores);
+  if (highestScore === lowestScore) {
+    return { multiplier: 1 };
+  }
+  if (player.score !== lowestScore) {
+    return { multiplier: 1 };
+  }
+
+  return {
+    multiplier: 2,
+    note: pickVariant(`${room.round}-${player.id}`, ['x2, последний вагон ускорился', 'x2, дно оттолкнуло', 'x2, камбэк проснулся'])
+  };
 }
 
 function uniqueAchievements<T extends Achievement>(achievements: T[]): T[] {
