@@ -30,7 +30,7 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
-import { getQuestionAudioSessionKey } from './audioScheduling';
+import { getQuestionAudioSessionKey, isSameAudioElementSource } from './audioScheduling';
 import { Starfield } from './starfield';
 import './styles.css';
 
@@ -1494,6 +1494,13 @@ function QrJoinCard({ roomCode, url }: { roomCode: string; url: string }) {
   );
 }
 
+const QuestionAudioElement = React.memo(
+  React.forwardRef<HTMLAudioElement, React.AudioHTMLAttributes<HTMLAudioElement>>(function QuestionAudioElement({ src, ...props }, ref) {
+    return <audio ref={ref} src={src} preload="auto" {...props} />;
+  }),
+  (previous, next) => isSameAudioElementSource(previous.src, next.src)
+);
+
 function DisplayQuestionStage({
   room,
   volume,
@@ -1521,10 +1528,9 @@ function DisplayQuestionStage({
 
   return (
     <div className="stage question-stage display-question-stage">
-      <audio
+      <QuestionAudioElement
         ref={audioRef}
         src={question.audioUrl}
-        preload="auto"
         onError={() => setAudioIssue('Не удалось воспроизвести этот отрывок.')}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
@@ -1759,10 +1765,9 @@ function PlayerQuestionStage({
 
   return (
     <div className="player-question-stage">
-      <audio
+      <QuestionAudioElement
         ref={audioRef}
         src={question.audioUrl}
-        preload="auto"
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
         }}
@@ -2053,10 +2058,9 @@ function QuestionStage({
 
   return (
     <div className="stage question-stage round-screen">
-      <audio
+      <QuestionAudioElement
         ref={audioRef}
         src={question.audioUrl}
-        preload="auto"
         onError={() => setAudioIssue('Не удалось воспроизвести этот отрывок. Сервер попробует другой трек в следующем раунде.')}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
