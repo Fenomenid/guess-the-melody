@@ -30,6 +30,7 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
+import { getQuestionAudioSessionKey } from './audioScheduling';
 import { Starfield } from './starfield';
 import './styles.css';
 
@@ -2665,6 +2666,8 @@ function useScheduledQuestionAudio({
   onStarted?: () => void;
   onBlocked: () => void;
 }) {
+  const audioSessionKey = getQuestionAudioSessionKey(question);
+
   function playAudio() {
     const audio = audioRef.current;
     if (!audio) return;
@@ -2693,7 +2696,7 @@ function useScheduledQuestionAudio({
     const delayMs = Math.max(0, question.startedAt - serverTime);
     const timeout = window.setTimeout(playAudio, delayMs);
     return () => window.clearTimeout(timeout);
-  }, [question.id, question.audioUrl, question.startedAt, serverTime]);
+  }, [audioSessionKey]);
 
   useEffect(() => {
     const audio = audioRef.current;
