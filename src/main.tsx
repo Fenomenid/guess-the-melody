@@ -108,6 +108,8 @@ type PlaylistSearchItem = PlaylistSource & {
   trackCount?: number;
 };
 
+type AudioDeliveryMode = 'direct' | 'cache' | 'unknown';
+
 type Room = {
   code: string;
   status: 'lobby' | 'preparing' | 'question' | 'round-result' | 'finished';
@@ -213,6 +215,7 @@ function App() {
   const [joinCode, setJoinCode] = useState(roomCodeFromUrl);
   const [room, setRoom] = useState<Room | null>(null);
   const [themes, setThemes] = useState<Theme[]>([]);
+  const [audioDeliveryMode, setAudioDeliveryMode] = useState<AudioDeliveryMode>('unknown');
   const [error, setError] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -259,6 +262,14 @@ function App() {
       .then((response) => response.json())
       .then((payload) => setThemes(payload.data ?? []))
       .catch(() => setError('Не удалось загрузить темы'));
+
+    fetch('/api/music/diagnostics')
+      .then((response) => response.json())
+      .then((payload: { data?: { audioDeliveryMode?: AudioDeliveryMode } }) => {
+        const mode = payload.data?.audioDeliveryMode;
+        setAudioDeliveryMode(mode === 'cache' || mode === 'direct' ? mode : 'unknown');
+      })
+      .catch(() => setAudioDeliveryMode('unknown'));
 
     const rejoinCurrentRoom = () => {
       const currentRoom = roomRef.current;
@@ -756,6 +767,7 @@ function App() {
           room={room}
           me={me}
           themes={themes}
+          audioDeliveryMode={audioDeliveryMode}
           isHost={isHost}
           isBusy={isInteractionBusy}
           selectedOptionId={selectedOptionId}
@@ -815,6 +827,7 @@ function App() {
             <Lobby
               room={room}
               themes={themes}
+              audioDeliveryMode={audioDeliveryMode}
               isHost={isHost}
               isBusy={isInteractionBusy}
               onStart={() => emit('start_game', { code: room.code, playerId }, undefined, 'Готовим треки Яндекс Музыки')}
@@ -849,6 +862,7 @@ function App() {
 function Lobby({
   room,
   themes,
+  audioDeliveryMode,
   isHost,
   isBusy,
   onStart,
@@ -856,6 +870,7 @@ function Lobby({
 }: {
   room: Room;
   themes: Theme[];
+  audioDeliveryMode: AudioDeliveryMode;
   isHost: boolean;
   isBusy: boolean;
   onStart: () => void;
@@ -997,6 +1012,19 @@ function Lobby({
     <div className="stage lobby-stage">
       <p className="eyebrow">Лобби</p>
       <h2>Ожидание игроков</h2>
+      <div className={['audio-mode-status', audioDeliveryMode].filter(Boolean).join(' ')}>
+        <Volume2 size={17} />
+        <span>
+          <strong>{audioDeliveryMode === 'cache' ? 'Аудио через сервер' : audioDeliveryMode === 'direct' ? 'Аудио напрямую' : 'Аудио проверяется'}</strong>
+          <small>
+            {audioDeliveryMode === 'cache'
+              ? 'Render раздает отрывки из кеша. Надежнее, но расходует исходящий трафик.'
+              : audioDeliveryMode === 'direct'
+                ? 'Браузеры игроков грузят отрывки с Яндекс Музыки. Render почти не тратит трафик на звук.'
+                : 'Режим доставки звука будет показан после ответа сервера.'}
+          </small>
+        </span>
+      </div>
 
       <div className="settings-stack">
         <details className="settings-section" open>
@@ -1478,18 +1506,16 @@ function DisplayQuestionStage({
   const countdown = useQuestionCountdown(question, room.serverTime);
   const [audioIssue, setAudioIssue] = useState('');
 
-  function playAudio() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = volume;
-    setAudioIssue('');
-    void audio.play().catch(() => setAudioIssue('Браузер не запустил звук автоматически. Нажмите повторить.'));
-  }
+  const playAudio = useScheduledQuestionAudio({
+    question,
+    serverTime: room.serverTime,
+    volume,
+    audioRef,
+    onBlocked: () => setAudioIssue('Браузер не запустил звук автоматически. Нажмите повторить.')
+  });
 
   useEffect(() => {
     setAudioIssue('');
-    const timeout = window.setTimeout(playAudio, 150);
-    return () => window.clearTimeout(timeout);
   }, [question.id]);
 
   return (
@@ -1498,8 +1524,6 @@ function DisplayQuestionStage({
         ref={audioRef}
         src={question.audioUrl}
         preload="auto"
-        autoPlay
-        onCanPlay={playAudio}
         onError={() => setAudioIssue('Не удалось воспроизвести этот отрывок.')}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
@@ -1549,6 +1573,7 @@ function PlayerRoom({
   room,
   me,
   themes,
+  audioDeliveryMode,
   isHost,
   isBusy,
   selectedOptionId,
@@ -1565,6 +1590,7 @@ function PlayerRoom({
   room: Room;
   me?: Player;
   themes: Theme[];
+  audioDeliveryMode: AudioDeliveryMode;
   isHost: boolean;
   isBusy: boolean;
   selectedOptionId: string;
@@ -1603,7 +1629,7 @@ function PlayerRoom({
           isHost ? (
             <div className="player-host-lobby">
               <PlayerStatus title="Вы ведущий" text="Настройте игру и запускайте раунд. Музыка будет играть на общем экране." />
-              <Lobby room={room} themes={themes} isHost={isHost} isBusy={isBusy} onStart={onStart} onSettingsChange={onSettingsChange} />
+              <Lobby room={room} themes={themes} audioDeliveryMode={audioDeliveryMode} isHost={isHost} isBusy={isBusy} onStart={onStart} onSettingsChange={onSettingsChange} />
             </div>
           ) : (
             <PlayerStatus title="Ждем старт" text="Ведущий скоро начнет раунд." />
@@ -1662,7 +1688,7 @@ function PlayerRoundResult({
           </div>
         </div>
       )}
-      {me && room.settings.comebackMode && (
+      {me && room.settings.comebackMode && room.players.length > 1 && (
         <ComebackAbilityPanel room={room} player={me} onActivate={onActivateComebackAbility} />
       )}
       <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact compactMode="title" />
@@ -1706,24 +1732,19 @@ function PlayerQuestionStage({
   const hasAnswered = Boolean(me?.lastAnswer);
   const hasSubmitted = hasAnswered || Boolean(selectedOptionId);
   const isPersonalTimeExpired = countdown.secondsLeft <= 0;
-  const isAnswerLocked = (hasSubmitted && !room.settings.allowAnswerChange) || isPersonalTimeExpired;
+  const isAnswerLocked = (hasSubmitted && !room.settings.allowAnswerChange) || isPersonalTimeExpired || countdown.isPendingStart;
 
-  function playAudio() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = volume;
-    if (volume <= 0) {
-      audio.pause();
-      onAudioNeedsGestureChange(false);
-      return;
-    }
-    void audio.play().then(() => onAudioNeedsGestureChange(false)).catch(() => onAudioNeedsGestureChange(true));
-  }
+  const playAudio = useScheduledQuestionAudio({
+    question,
+    serverTime: room.serverTime,
+    volume,
+    audioRef,
+    onStarted: () => onAudioNeedsGestureChange(false),
+    onBlocked: () => onAudioNeedsGestureChange(true)
+  });
 
   useEffect(() => {
     onAudioNeedsGestureChange(false);
-    const timeout = window.setTimeout(playAudio, 150);
-    return () => window.clearTimeout(timeout);
   }, [question.id]);
 
   useEffect(() => {
@@ -1741,16 +1762,14 @@ function PlayerQuestionStage({
         ref={audioRef}
         src={question.audioUrl}
         preload="auto"
-        autoPlay
-        onCanPlay={playAudio}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
         }}
       />
       <div className="round-header round-topline">
         <span>{room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}</span>
-        <span>{hasAnswered ? 'Ответ принят' : isPersonalTimeExpired ? 'Время вышло' : answerModePrompt(room.settings.answerMode)}</span>
-        <span className="answered-pill mobile-answered-pill">Ответили {answeredCount}/{playerCount}</span>
+        <span>{hasAnswered ? 'Ответ принят' : countdown.isPendingStart ? 'Готовим звук' : isPersonalTimeExpired ? 'Время вышло' : answerModePrompt(room.settings.answerMode)}</span>
+        {playerCount > 1 && <span className="answered-pill mobile-answered-pill">Ответили {answeredCount}/{playerCount}</span>}
       </div>
       {me?.timecutActive && (
         <div className="notice timecut-notice">
@@ -1883,7 +1902,7 @@ function PlayersPanel({
       <div className="section-title">
         <Users size={18} />
         Игроки
-        {isQuestionStage && <span className="answered-pill">Ответили {answeredCount}/{playerCount}</span>}
+        {isQuestionStage && playerCount > 1 && <span className="answered-pill">Ответили {answeredCount}/{playerCount}</span>}
       </div>
       <div className="players players-full">{rows}</div>
       <details className="players-collapse">
@@ -2017,19 +2036,18 @@ function QuestionStage({
   const countdown = useQuestionCountdown(question, room.serverTime, me?.reducedQuestionDurationMs, me?.reducedQuestionEndsAt);
   const [audioIssue, setAudioIssue] = useState('');
   const isPersonalTimeExpired = countdown.secondsLeft <= 0;
+  const isAnswerLocked = isPersonalTimeExpired || countdown.isPendingStart || Boolean(me?.lastAnswer && !room.settings.allowAnswerChange);
 
-  function playAudio() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = volume;
-    setAudioIssue('');
-    void audio.play().catch(() => setAudioIssue('Браузер не запустил звук автоматически. Нажмите повторить.'));
-  }
+  const playAudio = useScheduledQuestionAudio({
+    question,
+    serverTime: room.serverTime,
+    volume,
+    audioRef,
+    onBlocked: () => setAudioIssue('Браузер не запустил звук автоматически. Нажмите повторить.')
+  });
 
   useEffect(() => {
     setAudioIssue('');
-    const timeout = window.setTimeout(playAudio, 150);
-    return () => window.clearTimeout(timeout);
   }, [question.id]);
 
   return (
@@ -2038,8 +2056,6 @@ function QuestionStage({
         ref={audioRef}
         src={question.audioUrl}
         preload="auto"
-        autoPlay
-        onCanPlay={playAudio}
         onError={() => setAudioIssue('Не удалось воспроизвести этот отрывок. Сервер попробует другой трек в следующем раунде.')}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
@@ -2050,7 +2066,7 @@ function QuestionStage({
         <span>
           {room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}
         </span>
-        <span>{me?.lastAnswer ? 'Ответ принят' : isPersonalTimeExpired ? 'Время вышло' : answerModePrompt(room.settings.answerMode)}</span>
+        <span>{me?.lastAnswer ? 'Ответ принят' : countdown.isPendingStart ? 'Готовим звук' : isPersonalTimeExpired ? 'Время вышло' : answerModePrompt(room.settings.answerMode)}</span>
       </div>
       <div className="music-visual">
         <div className={['countdown-ring', me?.timecutActive ? 'timecut-countdown' : ''].filter(Boolean).join(' ')} style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
@@ -2090,14 +2106,14 @@ function QuestionStage({
             className={[
               'answer-button',
               selectedOptionId === option.id ? 'selected-answer' : '',
-              (me?.lastAnswer && !room.settings.allowAnswerChange) || isPersonalTimeExpired ? 'locked-answer' : '',
+              isAnswerLocked ? 'locked-answer' : '',
               me?.hiddenOptionIndexes?.includes(index) ? 'jammed-answer' : ''
             ]
               .filter(Boolean)
               .join(' ')}
             key={option.id}
             onClick={() => onSubmit(option.id)}
-            disabled={isPersonalTimeExpired || Boolean(me?.lastAnswer && !room.settings.allowAnswerChange)}
+            disabled={isAnswerLocked}
             aria-label={me?.hiddenOptionIndexes?.includes(index) ? `Скрытый вариант ${index + 1}` : option.title}
           >
             <AnswerOptionLabel title={option.title} hidden={Boolean(me?.hiddenOptionIndexes?.includes(index))} />
@@ -2278,7 +2294,7 @@ function ResultStage({
         </div>
       )}
       <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact compactMode="title" />
-      {room.settings.comebackMode && onActivateComebackAbility && room.players.some((player) => player.id === playerId) && (
+      {room.settings.comebackMode && room.players.length > 1 && onActivateComebackAbility && room.players.some((player) => player.id === playerId) && (
         <ComebackAbilityPanel
           room={room}
           player={room.players.find((player) => player.id === playerId)!}
@@ -2359,11 +2375,6 @@ function FinalStage({
 
   return (
     <div className="stage final-stage">
-      <div className="fireworks" aria-hidden="true">
-        {Array.from({ length: 18 }, (_, index) => (
-          <span key={index} style={{ '--x': `${(index * 37) % 100}%`, '--delay': `${(index % 6) * 160}ms` } as React.CSSProperties} />
-        ))}
-      </div>
       <p className="eyebrow">Финал</p>
       <h2>Игра окончена</h2>
       <div className="notice winner">
@@ -2371,6 +2382,11 @@ function FinalStage({
         <span>Победитель: {room.players[0]?.name ?? 'игрок'}</span>
       </div>
       <div className="podium" data-count={podium.length}>
+        <div className="fireworks" aria-hidden="true">
+          {Array.from({ length: 18 }, (_, index) => (
+            <span key={index} style={{ '--x': `${8 + ((index * 37) % 84)}%`, '--delay': `${(index % 6) * 160}ms` } as React.CSSProperties} />
+          ))}
+        </div>
         {podium.map((player) => {
           const place = room.players.findIndex((candidate) => candidate.id === player.id) + 1;
           return (
@@ -2620,15 +2636,75 @@ function useQuestionCountdown(
   }, [question.id, serverTime]);
 
   const adjustedNow = now + serverOffsetRef.current;
+  const isPendingStart = adjustedNow < question.startedAt;
   const durationMs = Math.max(1, durationOverrideMs ?? question.durationMs);
   const endsAt = endsAtOverride ?? question.endsAt;
-  const remaining = Math.max(0, endsAt - adjustedNow);
+  const activeNow = Math.max(adjustedNow, question.startedAt);
+  const remaining = Math.max(0, endsAt - activeNow);
   const progress = clamp(remaining / durationMs, 0, 1);
 
   return {
     secondsLeft: Math.ceil(remaining / 1000),
-    progress
+    progress,
+    isPendingStart
   };
+}
+
+function useScheduledQuestionAudio({
+  question,
+  serverTime,
+  volume,
+  audioRef,
+  onStarted,
+  onBlocked
+}: {
+  question: NonNullable<Room['currentQuestion']>;
+  serverTime: number;
+  volume: number;
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>;
+  onStarted?: () => void;
+  onBlocked: () => void;
+}) {
+  function playAudio() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    if (volume <= 0) {
+      audio.pause();
+      onStarted?.();
+      return;
+    }
+    void audio.play().then(() => onStarted?.()).catch(onBlocked);
+  }
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.volume = volume;
+      audio.pause();
+      try {
+        audio.currentTime = 0;
+      } catch {
+        // Some remote audio URLs may not allow seeking before metadata is ready.
+      }
+      audio.load();
+    }
+
+    const delayMs = Math.max(0, question.startedAt - serverTime);
+    const timeout = window.setTimeout(playAudio, delayMs);
+    return () => window.clearTimeout(timeout);
+  }, [question.id, question.audioUrl, question.startedAt, serverTime]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    if (volume <= 0) {
+      audio.pause();
+    }
+  }, [volume]);
+
+  return playAudio;
 }
 
 function useAutoNextCountdown(status: Room['status'], round: number, enabled = true): number {

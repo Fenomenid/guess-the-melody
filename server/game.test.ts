@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { prepareTrackAudio } from './audioDelivery';
 import { GameEngine } from './game';
 import type { Track } from './types';
 
@@ -44,6 +45,18 @@ describe('GameEngine', () => {
 
     expect(leader?.comebackEnergy).toBeGreaterThan(0);
     expect(chaser?.comebackEnergy).toBeGreaterThan(leader?.comebackEnergy ?? 0);
+  });
+
+  it('does not allow comeback abilities in solo games', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'solo', playerName: 'Solo' });
+    engine.updateSettings('ROOM42', { comebackMode: true });
+
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.submitAnswer('ROOM42', 'solo', question.correctOptionId, 2000);
+    engine.revealRound('ROOM42');
+
+    expect(() => engine.activateComebackAbility('ROOM42', 'solo')).toThrow('at least two players');
   });
 
   it('arms one jammer that hides exactly two different answers from the leader in the next round', () => {
@@ -184,6 +197,39 @@ describe('GameEngine', () => {
 
     const leader = engine.getPublicRoom('ROOM42').players.find((player) => player.id === 'leader');
     expect(leader?.reducedQuestionDurationMs).toBe(5_000);
+  });
+
+  it('smoke tests direct audio with Timecut deadline enforcement', async () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    const directTracks = await prepareTrackAudio('ROOM42', tracks, {
+      mode: 'direct',
+      cacheTrackAudio: async () => {
+        throw new Error('cache should not be used');
+      }
+    });
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.updateSettings('ROOM42', { comebackMode: true });
+
+    for (let round = 0; round < 3; round += 1) {
+      const question = engine.startNextRound('ROOM42', directTracks, 10_000, 1000 + round * 20_000);
+      expect(question.audioUrl).toBe(tracks.find((track) => track.id === question.correctTrack.id)?.audioUrl);
+      engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100 + round * 20_000);
+      engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 8500 + round * 20_000);
+      engine.revealRound('ROOM42');
+    }
+
+    engine.activateComebackAbility('ROOM42', 'chaser', 'timecut');
+    const timecutQuestion = engine.startNextRound('ROOM42', directTracks, 10_000, 100_000);
+    const leader = engine.getPublicRoom('ROOM42').players.find((player) => player.id === 'leader');
+
+    expect(leader).toMatchObject({
+      reducedQuestionDurationMs: 5_000,
+      reducedQuestionEndsAt: 105_000,
+      timecutActive: true
+    });
+    expect(() => engine.submitAnswer('ROOM42', 'leader', timecutQuestion.correctOptionId, 99_999)).toThrow('not started');
+    expect(() => engine.submitAnswer('ROOM42', 'leader', timecutQuestion.correctOptionId, 105_001)).toThrow('deadline');
   });
 
   it('doubles correct points for the last-place player in Revansh games with at least three players', () => {

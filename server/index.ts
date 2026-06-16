@@ -4,9 +4,11 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { Server } from 'socket.io';
 import { AudioCache } from './audioCache';
+import { prepareTrackAudio, resolveAudioDeliveryMode } from './audioDelivery';
 import { GameEngine } from './game';
 import { MusicService } from './music';
 import { RoomStore } from './roomStore';
+import { planRoundStart, planTrackPoolLimits } from './roundPlanning';
 import type { RoomSettings, Track, TrackMetadata } from './types';
 
 const port = Number(process.env.PORT ?? 3001);
@@ -22,6 +24,8 @@ const io = new Server(httpServer, {
   }
 });
 const audioCacheMaxBytes = parsePositiveInteger(process.env.AUDIO_CACHE_MAX_BYTES, 8_000_000);
+const audioDeliveryMode = resolveAudioDeliveryMode();
+const roundAudioWarmupMs = parseNonNegativeInteger(process.env.ROUND_AUDIO_WARMUP_MS, audioDeliveryMode === 'direct' ? 1_750 : 750);
 
 const engine = new GameEngine();
 const music = new MusicService();
@@ -36,9 +40,6 @@ const socketPlayers = new Map<string, { roomCode: string; playerId: string }>();
 const playerSockets = new Map<string, Set<string>>();
 const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
 
-const BACKGROUND_POOL_ROUND_THRESHOLD = 24;
-const INITIAL_PLAYABLE_LIMIT = 16;
-const INITIAL_OPTION_LIMIT = 160;
 const DISCONNECT_GRACE_MS = 8_000;
 
 app.use(cors({ origin: clientOrigin }));
@@ -65,7 +66,7 @@ app.get('/api/music/playlists/search', async (request, response) => {
 });
 
 app.get('/api/music/diagnostics', (_request, response) => {
-  response.json({ data: music.diagnostics() });
+  response.json({ data: { ...music.diagnostics(), audioDeliveryMode } });
 });
 
 app.get('/api/music/probe', async (request, response) => {
@@ -190,20 +191,20 @@ io.on('connection', (socket) => {
         playlistUrl: preparingRoom.settings.playlistUrl,
         difficulty: preparingRoom.settings.difficulty
       };
-      const shouldLoadInBackground = plannedRounds > BACKGROUND_POOL_ROUND_THRESHOLD;
+      const trackPoolPlan = planTrackPoolLimits(plannedRounds);
       const loadToken = nextPoolLoadToken(preparingRoom.code);
       const pool = await music.prepareTrackPool(
         source,
         {
-          playableLimit: shouldLoadInBackground ? INITIAL_PLAYABLE_LIMIT : Math.max(12, plannedRounds + 20),
-          optionLimit: shouldLoadInBackground ? INITIAL_OPTION_LIMIT : Math.max(220, plannedRounds * 18)
+          playableLimit: trackPoolPlan.initialPlayableLimit,
+          optionLimit: trackPoolPlan.initialOptionLimit
         }
       );
       audioCache.clearRoom(preparingRoom.code);
-      roomTracks.set(preparingRoom.code, shuffle(await cacheRoomTrackAudio(preparingRoom.code, pool.playableTracks)));
+      roomTracks.set(preparingRoom.code, shuffle(await prepareRoomTrackAudio(preparingRoom.code, pool.playableTracks)));
       roomOptionTracks.set(preparingRoom.code, shuffle(pool.optionTracks));
       await startRound(preparingRoom.code);
-      if (shouldLoadInBackground) {
+      if (trackPoolPlan.shouldLoadInBackground) {
         void hydrateRoomTrackPool(preparingRoom.code, loadToken, source, plannedRounds);
       }
       callback?.({ data: engine.getPublicRoom(preparingRoom.code) });
@@ -371,31 +372,14 @@ async function resetRoomToLobby(code: string): Promise<ReturnType<GameEngine['re
   return room;
 }
 
-async function cacheRoomTrackAudio(code: string, tracks: Track[]): Promise<Track[]> {
-  const cachedTracks: Track[] = [];
-  const batchSize = 4;
-  for (let index = 0; index < tracks.length; index += batchSize) {
-    const batch = tracks.slice(index, index + batchSize);
-    const results = await Promise.all(
-      batch.map(async (track) => {
-        try {
-          return {
-            ...track,
-            audioUrl: await audioCache.cacheTrackAudio(code, track.audioUrl)
-          };
-        } catch (error) {
-          console.warn(`[audio] failed to cache ${track.id} for ${code.toUpperCase()}: ${toClientError(error)}`);
-          return undefined;
-        }
-      })
-    );
-    cachedTracks.push(...results.filter((track): track is Track => Boolean(track)));
-  }
-
-  if (cachedTracks.length < 4) {
-    throw new Error('Could not cache enough playable audio tracks');
-  }
-  return cachedTracks;
+async function prepareRoomTrackAudio(code: string, tracks: Track[]): Promise<Track[]> {
+  return prepareTrackAudio(code, tracks, {
+    mode: audioDeliveryMode,
+    cacheTrackAudio: (roomCode, upstreamUrl) => audioCache.cacheTrackAudio(roomCode, upstreamUrl),
+    onCacheError: (track, error) => {
+      console.warn(`[audio] failed to cache ${track.id} for ${code.toUpperCase()}: ${toClientError(error)}`);
+    }
+  });
 }
 
 async function hydrateRoomTrackPool(
@@ -406,8 +390,8 @@ async function hydrateRoomTrackPool(
 ): Promise<void> {
   try {
     const pool = await music.prepareTrackPool(source, {
-      playableLimit: Math.max(INITIAL_PLAYABLE_LIMIT, plannedRounds + 30),
-      optionLimit: Math.max(260, plannedRounds * 18)
+      playableLimit: planTrackPoolLimits(plannedRounds).backgroundPlayableLimit,
+      optionLimit: planTrackPoolLimits(plannedRounds).backgroundOptionLimit
     });
     if (pool.isFallback) {
       console.warn(`[music] background pool load for ${code.toUpperCase()} returned fallback; keeping current room pool`);
@@ -420,8 +404,8 @@ async function hydrateRoomTrackPool(
 
     const currentTracks = roomTracks.get(room.code) ?? [];
     const currentOptions = roomOptionTracks.get(room.code) ?? [];
-    const cachedTracks = await cacheRoomTrackAudio(room.code, pool.playableTracks);
-    roomTracks.set(room.code, shuffle(mergeUniqueById(currentTracks, cachedTracks)));
+    const preparedTracks = await prepareRoomTrackAudio(room.code, pool.playableTracks);
+    roomTracks.set(room.code, shuffle(mergeUniqueById(currentTracks, preparedTracks)));
     roomOptionTracks.set(room.code, shuffle(mergeUniqueByTitle(currentOptions, pool.optionTracks)));
     console.log(`[music] hydrated room ${room.code}: ${roomTracks.get(room.code)?.length ?? 0} playable tracks`);
   } catch (error) {
@@ -439,7 +423,7 @@ async function startRound(code: string): Promise<void> {
     throw new Error('No track pool prepared for room');
   }
 
-  engine.startNextRound(room.code, tracks, optionTracks);
+  engine.startNextRound(room.code, tracks, optionTracks, undefined, planRoundStart(Date.now(), roundAudioWarmupMs));
   const updated = engine.getPublicRoom(room.code);
   await persistRooms();
   io.to(room.code).emit('round_started', updated);
@@ -616,6 +600,14 @@ function clampPage(value: number): number {
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.round(parsed);
+}
+
+function parseNonNegativeInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return fallback;
   }
   return Math.round(parsed);

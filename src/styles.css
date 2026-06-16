@@ -876,6 +876,43 @@ select:focus {
   gap: 12px;
 }
 
+.audio-mode-status {
+  width: min(620px, 100%);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-strong);
+  background: var(--surface);
+  text-align: left;
+}
+
+.audio-mode-status.direct {
+  border-color: color-mix(in srgb, var(--success) 44%, var(--border));
+}
+
+.audio-mode-status.cache {
+  border-color: color-mix(in srgb, var(--gold) 44%, var(--border));
+}
+
+.audio-mode-status svg {
+  color: var(--accent);
+}
+
+.audio-mode-status span {
+  display: grid;
+  gap: 2px;
+}
+
+.audio-mode-status small {
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .settings-section {
   width: 100%;
   border: 1px solid var(--border);
@@ -1954,12 +1991,13 @@ select:focus {
   overflow: hidden;
 }
 
-.final-stage>*:not(.fireworks) {
+.final-stage>* {
   position: relative;
   z-index: 1;
 }
 
 .podium {
+  position: relative;
   width: min(760px, 100%);
   min-height: 260px;
   display: grid;
@@ -1980,6 +2018,8 @@ select:focus {
 }
 
 .podium-place {
+  position: relative;
+  z-index: 1;
   display: grid;
   justify-items: center;
   align-content: end;
@@ -2043,10 +2083,13 @@ select:focus {
 
 .fireworks {
   position: absolute;
-  inset: 0;
-  overflow: hidden;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: clamp(120px, 18vw, 170px);
+  overflow: visible;
   pointer-events: none;
-  z-index: 2;
+  z-index: 0;
 }
 
 .fireworks span {
@@ -2054,7 +2097,7 @@ select:focus {
   --delay: 0ms;
   position: absolute;
   left: var(--x);
-  top: 10%;
+  top: 0;
   width: 7px;
   aspect-ratio: 1;
   border-radius: 50%;

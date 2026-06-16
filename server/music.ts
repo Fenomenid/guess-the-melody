@@ -127,6 +127,7 @@ export type MusicDiagnostics = {
   tokenConfigured: boolean;
   forceDemo: boolean;
   allowFullTrackFallback: boolean;
+  audioDeliveryMode?: 'direct' | 'cache';
   themeCount: number;
   lastFallbackReason?: string;
   lastLoadStats?: TrackLoadStats;

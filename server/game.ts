@@ -254,6 +254,9 @@ export class GameEngine {
     if (room.status !== 'round-result') {
       throw new Error('Abilities can only be armed after a round');
     }
+    if (room.players.size < 2) {
+      throw new Error('Comeback abilities require at least two players');
+    }
 
     const player = room.players.get(playerId);
     if (!player) {
@@ -425,6 +428,9 @@ export class GameEngine {
     }
     if (!room.currentQuestion || room.status !== 'question') {
       throw new Error('No active question');
+    }
+    if (now < room.currentQuestion.startedAt) {
+      throw new Error('Question has not started yet');
     }
     const playerDeadline = player.reducedQuestionEndsAt ?? room.currentQuestion.endsAt;
     if (now > playerDeadline) {
