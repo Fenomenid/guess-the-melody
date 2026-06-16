@@ -215,6 +215,7 @@ function App() {
   const [themes, setThemes] = useState<Theme[]>([]);
   const [error, setError] = useState('');
   const [isBusy, setIsBusy] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const [busyLabel, setBusyLabel] = useState('');
   const [copied, setCopied] = useState(false);
   const [volume, setVolume] = useState(() => Number(localStorage.getItem('volume') ?? 0.1));
@@ -235,6 +236,7 @@ function App() {
   );
   const isQuestionStage = room?.status === 'question' && Boolean(room.currentQuestion);
   const isResultStage = room?.status === 'round-result' || room?.status === 'finished';
+  const isInteractionBusy = isBusy || isReconnecting;
   const answeredCount = room?.players.filter((player) => Boolean(player.lastAnswer)).length ?? 0;
   const playerCount = room?.players.length ?? 0;
   const selectedOptionId = room?.currentQuestion?.id === selectedAnswer.questionId ? selectedAnswer.optionId : '';
@@ -263,16 +265,28 @@ function App() {
       if (appMode === 'display') {
         const code = currentRoom?.code ?? roomCodeFromUrl;
         if (!code) {
+          setIsReconnecting(false);
           return;
         }
-        socket.emit('view_room', { code }, (response: { data?: Room; error?: string }) => {
+        setIsReconnecting(true);
+        socket.timeout(12_000).emit('view_room', { code }, (timeoutError: Error | null, response?: { data?: Room; error?: string }) => {
+          if (timeoutError) {
+            setError('Не удалось восстановить экран ведущего: сервер не ответил.');
+            return;
+          }
+          if (!response) {
+            setError('Не удалось восстановить экран ведущего: сервер вернул пустой ответ.');
+            return;
+          }
           if (response.error) {
             setError(`Не удалось открыть экран ведущего: ${response.error}`);
+            setIsReconnecting(false);
             return;
           }
           if (response.data) {
             handleRoomState(response.data);
             setError('');
+            setIsReconnecting(false);
           }
         });
         return;
@@ -280,28 +294,65 @@ function App() {
 
       const name = (localStorage.getItem('playerName') ?? playerNameRef.current).trim();
       if (!currentRoom || !name || leftRoomCodesRef.current.has(currentRoom.code)) {
+        setIsReconnecting(false);
         return;
       }
 
-      socket.emit('join_room', { code: currentRoom.code, playerId, playerName: name }, (response: { data?: Room; error?: string }) => {
+      setIsReconnecting(true);
+      socket.timeout(12_000).emit('join_room', { code: currentRoom.code, playerId, playerName: name }, (timeoutError: Error | null, response?: { data?: Room; error?: string }) => {
+        if (timeoutError) {
+          setError('Не удалось восстановить соединение: сервер не ответил.');
+          return;
+        }
+        if (!response) {
+          setError('Не удалось восстановить соединение: сервер вернул пустой ответ.');
+          return;
+        }
         if (response.error) {
           setError(`Не удалось восстановить соединение: ${response.error}`);
+          setIsReconnecting(false);
           return;
         }
         if (response.data) {
           handleRoomState(response.data);
           setError('');
+          setIsReconnecting(false);
         }
       });
     };
 
-    const handleDisconnect = () => {
+    const handleDisconnect = (reason: string) => {
       if (!roomRef.current) {
         return;
       }
       setIsBusy(false);
       setBusyLabel('');
-      setError('Связь с комнатой потеряна. Пробуем переподключиться...');
+      setIsReconnecting(true);
+      setError(reason === 'io server disconnect' ? 'Сервер разорвал соединение. Пробуем подключиться заново...' : 'Связь с комнатой потеряна. Пробуем переподключиться...');
+    };
+
+    const handleConnectError = () => {
+      if (!roomRef.current) {
+        return;
+      }
+      setIsReconnecting(true);
+      setError('Не получается подключиться к серверу. Игра продолжит восстановление автоматически.');
+    };
+
+    const handleReconnectAttempt = () => {
+      if (!roomRef.current) {
+        return;
+      }
+      setIsReconnecting(true);
+      setError('Переподключаемся к комнате...');
+    };
+
+    const handleReconnectFailed = () => {
+      if (!roomRef.current) {
+        return;
+      }
+      setIsReconnecting(false);
+      setError('Не удалось переподключиться автоматически. Проверьте сеть и обновите страницу, если связь не восстановится.');
     };
 
     socket.on('room_state', handleRoomState);
@@ -309,8 +360,12 @@ function App() {
     socket.on('round_result', setRoom);
     socket.on('connect', rejoinCurrentRoom);
     socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    socket.io.on('reconnect_attempt', handleReconnectAttempt);
+    socket.io.on('reconnect_failed', handleReconnectFailed);
     socket.on('kicked', ({ message }: { message: string }) => {
       setRoom(null);
+      setIsReconnecting(false);
       setError(message);
       window.history.replaceState(null, '', '/');
     });
@@ -321,6 +376,9 @@ function App() {
       socket.off('round_result', setRoom);
       socket.off('connect', rejoinCurrentRoom);
       socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.io.off('reconnect_attempt', handleReconnectAttempt);
+      socket.io.off('reconnect_failed', handleReconnectFailed);
       socket.off('kicked');
     };
   }, [appMode, roomCodeFromUrl]);
@@ -384,7 +442,7 @@ function App() {
     };
     ping();
 
-    const interval = window.setInterval(ping, 240_000);
+    const interval = window.setInterval(ping, 90_000);
 
     return () => window.clearInterval(interval);
   }, [room?.code]);
@@ -393,6 +451,7 @@ function App() {
     if (leftRoomCodesRef.current.has(nextRoom.code)) {
       return;
     }
+    setIsReconnecting(false);
     setRoom(nextRoom);
     const nextPath = appMode === 'normal' ? `/room/${nextRoom.code}` : `/room/${nextRoom.code}/${appMode}`;
     if (window.location.pathname !== nextPath) {
@@ -402,6 +461,10 @@ function App() {
 
   function emit<T>(event: string, payload: unknown, onSuccess?: (data: T) => void, label = '', options: { silent?: boolean } = {}) {
     setError('');
+    if (room && event !== 'leave_room' && (isReconnecting || !socket.connected)) {
+      setError('Связь с комнатой восстанавливается. Дождитесь переподключения и повторите действие.');
+      return;
+    }
     if (!options.silent) {
       setBusyLabel(label);
       setIsBusy(true);
@@ -471,6 +534,10 @@ function App() {
 
   function submitAnswer(optionId: string) {
     if (!room || (me?.lastAnswer && !room.settings.allowAnswerChange)) return;
+    if (isReconnecting || !socket.connected) {
+      setError('Связь с комнатой восстанавливается. Ответ можно отправить после переподключения.');
+      return;
+    }
     if (selectedAnswer.questionId === room.currentQuestion?.id && selectedAnswer.optionId === optionId) return;
     setSelectedAnswer({ questionId: room.currentQuestion?.id ?? '', optionId });
     emit('submit_answer', { code: room.code, playerId, optionId }, undefined, 'Фиксируем ответ');
@@ -601,7 +668,7 @@ function App() {
       <PlayerJoinScreen
         roomCode={roomCodeFromUrl}
         playerName={playerName}
-        isBusy={isBusy}
+        isBusy={isInteractionBusy}
         error={error}
         onPlayerNameChange={setPlayerName}
         onJoin={joinRoom}
@@ -629,22 +696,22 @@ function App() {
 
           {roomCodeFromUrl ? (
             <div className="auth-actions">
-              <button className="primary" onClick={joinRoom} disabled={isBusy}>
+              <button className="primary" onClick={joinRoom} disabled={isInteractionBusy}>
                 <LogIn size={18} />
                 Войти в комнату {roomCodeFromUrl}
               </button>
-              <button className="secondary" onClick={createRoom} disabled={isBusy}>
+              <button className="secondary" onClick={createRoom} disabled={isInteractionBusy}>
                 <Users size={18} />
                 Создать новую
               </button>
             </div>
           ) : (
             <div className="auth-actions">
-              <button className="primary" onClick={createRoom} disabled={isBusy}>
+              <button className="primary" onClick={createRoom} disabled={isInteractionBusy}>
                 <Users size={18} />
                 Создать комнату
               </button>
-              <button className="secondary" onClick={createDisplayRoom} disabled={isBusy}>
+              <button className="secondary" onClick={createDisplayRoom} disabled={isInteractionBusy}>
                 <Radio size={18} />
                 Экран ведущего
               </button>
@@ -653,13 +720,13 @@ function App() {
 
           <div className="join-row">
             <input value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="Код" maxLength={6} />
-            <button className="secondary" onClick={joinRoom} disabled={isBusy}>
+            <button className="secondary" onClick={joinRoom} disabled={isInteractionBusy}>
               <LogIn size={18} />
               Войти
             </button>
           </div>
 
-          {isBusy && <LoadingStrip label={busyLabel || 'Подключаемся'} />}
+          {isInteractionBusy && <LoadingStrip label={isReconnecting ? 'Восстанавливаем соединение' : busyLabel || 'Подключаемся'} />}
           {error && <p className="error">{error}</p>}
         </section>
       </main>
@@ -690,7 +757,7 @@ function App() {
           me={me}
           themes={themes}
           isHost={isHost}
-          isBusy={isBusy}
+          isBusy={isInteractionBusy}
           selectedOptionId={selectedOptionId}
           volume={volume}
           audioRef={audioRef}
@@ -749,7 +816,7 @@ function App() {
               room={room}
               themes={themes}
               isHost={isHost}
-              isBusy={isBusy}
+              isBusy={isInteractionBusy}
               onStart={() => emit('start_game', { code: room.code, playerId }, undefined, 'Готовим треки Яндекс Музыки')}
               onSettingsChange={updateSettings}
             />

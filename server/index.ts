@@ -34,10 +34,12 @@ const nextRoundTimers = new Map<string, NodeJS.Timeout>();
 const roomPoolLoadTokens = new Map<string, number>();
 const socketPlayers = new Map<string, { roomCode: string; playerId: string }>();
 const playerSockets = new Map<string, Set<string>>();
+const disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
 
 const BACKGROUND_POOL_ROUND_THRESHOLD = 24;
 const INITIAL_PLAYABLE_LIMIT = 16;
 const INITIAL_OPTION_LIMIT = 160;
+const DISCONNECT_GRACE_MS = 8_000;
 
 app.use(cors({ origin: clientOrigin }));
 app.use(express.json({ limit: '16kb' }));
@@ -340,12 +342,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const room = engine.disconnectPlayer(binding.roomCode, binding.playerId);
-    if (!room) {
-      return;
-    }
-    await persistRooms();
-    io.to(room.code).emit('room_state', room);
+    scheduleDisconnect(binding.roomCode, binding.playerId);
   });
 });
 
@@ -540,6 +537,7 @@ function requireSocketPlayer(socketId: string, code: string, playerId: string): 
 function bindSocketPlayer(socketId: string, roomCode: string, playerId: string): void {
   unbindSocketPlayer(socketId);
   const normalizedRoomCode = roomCode.toUpperCase();
+  clearDisconnectGrace(normalizedRoomCode, playerId);
   socketPlayers.set(socketId, { roomCode: normalizedRoomCode, playerId });
   const key = playerSocketKey(normalizedRoomCode, playerId);
   const sockets = playerSockets.get(key) ?? new Set<string>();
@@ -565,6 +563,40 @@ function unbindSocketPlayer(socketId: string): boolean {
 
 function playerSocketKey(roomCode: string, playerId: string): string {
   return `${roomCode.toUpperCase()}:${playerId}`;
+}
+
+function scheduleDisconnect(roomCode: string, playerId: string): void {
+  const normalizedRoomCode = roomCode.toUpperCase();
+  const key = playerSocketKey(normalizedRoomCode, playerId);
+  clearDisconnectGrace(normalizedRoomCode, playerId);
+
+  const timeout = setTimeout(() => {
+    disconnectGraceTimers.delete(key);
+    if (playerSockets.has(key)) {
+      return;
+    }
+    void markPlayerDisconnected(normalizedRoomCode, playerId);
+  }, DISCONNECT_GRACE_MS);
+  disconnectGraceTimers.set(key, timeout);
+}
+
+function clearDisconnectGrace(roomCode: string, playerId: string): void {
+  const key = playerSocketKey(roomCode, playerId);
+  const timeout = disconnectGraceTimers.get(key);
+  if (!timeout) {
+    return;
+  }
+  clearTimeout(timeout);
+  disconnectGraceTimers.delete(key);
+}
+
+async function markPlayerDisconnected(roomCode: string, playerId: string): Promise<void> {
+  const room = engine.disconnectPlayer(roomCode, playerId);
+  if (!room) {
+    return;
+  }
+  await persistRooms();
+  io.to(room.code).emit('room_state', room);
 }
 
 function clampProbeLimit(value: number): number {
