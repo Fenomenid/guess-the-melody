@@ -163,6 +163,7 @@ type Room = {
     lastJammerPlayerName?: string;
     lastTimecutPlayerId?: string;
     lastTimecutPlayerName?: string;
+    lastAttackingPlayerIds?: string[];
   };
   round: number;
   serverTime: number;
@@ -2171,9 +2172,11 @@ function ComebackAbilityPanel({
   const timecutTaken = Boolean(timecutOwner && timecutOwner !== player.id);
   const isJammerCooldown = room.players.length >= 3 && room.comeback?.lastJammerPlayerId === player.id;
   const isTimecutCooldown = room.players.length >= 3 && room.comeback?.lastTimecutPlayerId === player.id;
+  const lastAttackingPlayerIds = room.comeback?.lastAttackingPlayerIds ?? [room.comeback?.lastJammerPlayerId, room.comeback?.lastTimecutPlayerId].filter(Boolean);
+  const isAttackTurnBlocked = room.players.length >= 3 && lastAttackingPlayerIds.includes(player.id);
   const canCounter = player.comebackEnergy >= counterCost && !isArmed && isLeader && Boolean(jammerOwner);
-  const canUseJammer = player.comebackEnergy >= abilityCost && !isArmed && !isLeader && !jammerTaken && !isJammerCooldown && !jammerOwner;
-  const canUseTimecut = player.comebackEnergy >= abilityCost && !isArmed && !isLeader && !timecutTaken && !isTimecutCooldown && !timecutOwner;
+  const canUseJammer = player.comebackEnergy >= abilityCost && !isArmed && !isLeader && !jammerTaken && !isAttackTurnBlocked && !jammerOwner;
+  const canUseTimecut = player.comebackEnergy >= abilityCost && !isArmed && !isLeader && !timecutTaken && !isAttackTurnBlocked && !timecutOwner;
 
   return (
     <section className={['comeback-panel', isArmed ? 'armed' : '', player.comebackStatus === 'countered' ? 'counter-success' : ''].filter(Boolean).join(' ')}>
@@ -2222,7 +2225,7 @@ function ComebackAbilityPanel({
                 ? 'Глушилка заряжена'
                 : jammerTaken
                   ? `Уже зарядил ${room.comeback?.queuedJammerPlayerName}`
-                  : isJammerCooldown
+                  : isAttackTurnBlocked || isJammerCooldown
                     ? 'Сейчас очередь другого игрока'
                     : 'Зарядить на следующий раунд'}
             </button>
@@ -2236,7 +2239,7 @@ function ComebackAbilityPanel({
                 ? 'Ускоритель заряжен'
                 : timecutTaken
                   ? `Уже зарядил ${room.comeback?.queuedTimecutPlayerName}`
-                  : isTimecutCooldown
+                  : isAttackTurnBlocked || isTimecutCooldown
                     ? 'Сейчас очередь другого игрока'
                     : 'Урезать таймер лидеру'}
             </button>
@@ -2245,8 +2248,8 @@ function ComebackAbilityPanel({
       )}
 
       {isArmed && <div className="ability-armed-notice">Заряд принят. Эффект применится автоматически при старте следующего раунда.</div>}
-      {(isJammerCooldown || isTimecutCooldown) && !isLeader && !isArmed && (
-        <div className="ability-missed-notice">Вы уже использовали прошлый заряд этого типа. При трёх игроках и больше следующий такой скилл должен сделать кто-то другой.</div>
+      {isAttackTurnBlocked && !isLeader && !isArmed && (
+        <div className="ability-missed-notice">Сейчас не ваша очередь: вы уже использовали скилл в прошлом раунде. Дождитесь, пока его зарядит другой игрок.</div>
       )}
       {player.comebackStatus === 'countered' && <div className="ability-success-notice">Контрмера сработала: один слот раскрыт, +25 энергии.</div>}
       {player.comebackStatus === 'missed' && <div className="ability-missed-notice">Прогноз не совпал. Два варианта будут скрыты.</div>}

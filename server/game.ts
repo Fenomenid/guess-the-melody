@@ -297,6 +297,9 @@ export class GameEngine {
     if (player.pendingComebackAbility) {
       throw new Error('Player already has an ability armed');
     }
+    if (room.players.size >= 3 && room.comeback.lastAttackingPlayerIds?.includes(player.id)) {
+      throw new Error('Let another player use a comeback ability before using one again');
+    }
 
     if (selectedAbility === 'jammer') {
       if (room.comeback.queuedJammerPlayerId) {
@@ -677,6 +680,7 @@ export class GameEngine {
     }
 
     const nextComeback: ComebackState = {};
+    const lastAttackingPlayerIds = new Set<string>();
 
     const jammer = room.comeback.queuedJammerPlayerId ? room.players.get(room.comeback.queuedJammerPlayerId) : undefined;
     if (jammer) {
@@ -702,6 +706,7 @@ export class GameEngine {
       leader.counterPrediction = undefined;
       nextComeback.lastJammerPlayerId = jammer.id;
       nextComeback.lastJammerPlayerName = jammer.name;
+      lastAttackingPlayerIds.add(jammer.id);
     }
 
     const timecutter = room.comeback.queuedTimecutPlayerId ? room.players.get(room.comeback.queuedTimecutPlayerId) : undefined;
@@ -714,6 +719,11 @@ export class GameEngine {
       timecutter.comebackStatus = undefined;
       nextComeback.lastTimecutPlayerId = timecutter.id;
       nextComeback.lastTimecutPlayerName = timecutter.name;
+      lastAttackingPlayerIds.add(timecutter.id);
+    }
+
+    if (lastAttackingPlayerIds.size > 0) {
+      nextComeback.lastAttackingPlayerIds = [...lastAttackingPlayerIds];
     }
 
     room.comeback = nextComeback;

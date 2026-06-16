@@ -145,6 +145,7 @@ export type ComebackState = {
   lastJammerPlayerName?: string;
   lastTimecutPlayerId?: string;
   lastTimecutPlayerName?: string;
+  lastAttackingPlayerIds?: string[];
 };
 
 export type PublicRoom = {
