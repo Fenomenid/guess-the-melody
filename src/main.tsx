@@ -1168,7 +1168,7 @@ function Lobby({
                   <span>{source.name || defaultPlaylistSourceName(source.url, index)}</span>
                   <small>{source.url}</small>
                   <button
-                    className="kick-button"
+                    className="playlist-remove-button"
                     type="button"
                     disabled={!isHost || isBusy}
                     onClick={() => removePlaylistUrl(source.url)}
