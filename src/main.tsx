@@ -1026,7 +1026,7 @@ function Lobby({
             <span>
               <strong>Реванш <em className="beta-label">(beta)</em></strong>
               <small>
-                За правильные ответы копится энергия. Глушилка скрывает у лидера два случайных варианта, а Контрмера раскрывает один угаданный слот. При трёх игроках и больше Глушилку нельзя применять два раза подряд.
+                Режим камбэка: догоняющие заряжают скиллы за правильные ответы, чтобы прижать лидера Глушилкой или Ускорителем. Лидер может выкрутиться Контрмерой, если угадает скрытый слот. Последний в рейтинге получает x2 очки за верные ответы.
               </small>
             </span>
           </label>
@@ -1635,9 +1635,11 @@ function PlayerQuestionStage({
   onSubmit: (optionId: string) => void;
 }) {
   const question = room.currentQuestion!;
+  const countdown = useQuestionCountdown(question, room.serverTime, me?.reducedQuestionDurationMs, me?.reducedQuestionEndsAt);
   const hasAnswered = Boolean(me?.lastAnswer);
   const hasSubmitted = hasAnswered || Boolean(selectedOptionId);
-  const isAnswerLocked = hasSubmitted && !room.settings.allowAnswerChange;
+  const isPersonalTimeExpired = countdown.secondsLeft <= 0;
+  const isAnswerLocked = (hasSubmitted && !room.settings.allowAnswerChange) || isPersonalTimeExpired;
 
   function playAudio() {
     const audio = audioRef.current;
@@ -1680,10 +1682,20 @@ function PlayerQuestionStage({
       />
       <div className="round-header round-topline">
         <span>{room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}</span>
-        <span>{hasAnswered ? 'Ответ принят' : answerModePrompt(room.settings.answerMode)}</span>
+        <span>{hasAnswered ? 'Ответ принят' : isPersonalTimeExpired ? 'Время вышло' : answerModePrompt(room.settings.answerMode)}</span>
         <span className="answered-pill mobile-answered-pill">Ответили {answeredCount}/{playerCount}</span>
       </div>
-      {isAnswerLocked && <div className="notice player-answer-notice">Ответ принят. Ждем остальных игроков.</div>}
+      {me?.timecutActive && (
+        <div className="notice timecut-notice">
+          <Timer size={18} />
+          <span>Ускоритель: ответ можно выбрать только первые {Math.ceil((me.reducedQuestionDurationMs ?? question.durationMs) / 1000)} сек.</span>
+        </div>
+      )}
+      {isAnswerLocked && (
+        <div className="notice player-answer-notice">
+          {isPersonalTimeExpired && !hasAnswered ? 'Время вышло. Музыка доиграет для остальных.' : 'Ответ принят. Ждем остальных игроков.'}
+        </div>
+      )}
       <div className="answers player-answers">
         {question.options.map((option, index) => (
           <button
@@ -1937,6 +1949,7 @@ function QuestionStage({
   const question = room.currentQuestion!;
   const countdown = useQuestionCountdown(question, room.serverTime, me?.reducedQuestionDurationMs, me?.reducedQuestionEndsAt);
   const [audioIssue, setAudioIssue] = useState('');
+  const isPersonalTimeExpired = countdown.secondsLeft <= 0;
 
   function playAudio() {
     const audio = audioRef.current;
@@ -1970,7 +1983,7 @@ function QuestionStage({
         <span>
           {room.settings.winCondition === 'score' ? `Раунд ${question.round}` : `Раунд ${question.round} из ${room.settings.rounds}`}
         </span>
-        <span>{me?.lastAnswer ? 'Ответ принят' : answerModePrompt(room.settings.answerMode)}</span>
+        <span>{me?.lastAnswer ? 'Ответ принят' : isPersonalTimeExpired ? 'Время вышло' : answerModePrompt(room.settings.answerMode)}</span>
       </div>
       <div className="music-visual">
         <div className={['countdown-ring', me?.timecutActive ? 'timecut-countdown' : ''].filter(Boolean).join(' ')} style={{ '--progress': `${countdown.progress * 360}deg` } as React.CSSProperties}>
@@ -2010,14 +2023,14 @@ function QuestionStage({
             className={[
               'answer-button',
               selectedOptionId === option.id ? 'selected-answer' : '',
-              me?.lastAnswer && !room.settings.allowAnswerChange ? 'locked-answer' : '',
+              (me?.lastAnswer && !room.settings.allowAnswerChange) || isPersonalTimeExpired ? 'locked-answer' : '',
               me?.hiddenOptionIndexes?.includes(index) ? 'jammed-answer' : ''
             ]
               .filter(Boolean)
               .join(' ')}
             key={option.id}
             onClick={() => onSubmit(option.id)}
-            disabled={Boolean(me?.lastAnswer && !room.settings.allowAnswerChange)}
+            disabled={isPersonalTimeExpired || Boolean(me?.lastAnswer && !room.settings.allowAnswerChange)}
             aria-label={me?.hiddenOptionIndexes?.includes(index) ? `Скрытый вариант ${index + 1}` : option.title}
           >
             <AnswerOptionLabel title={option.title} hidden={Boolean(me?.hiddenOptionIndexes?.includes(index))} />

@@ -163,6 +163,7 @@ describe('GameEngine', () => {
     expect(leader?.reducedQuestionEndsAt).toBe(105_000);
     expect(leader?.timecutActive).toBe(true);
     expect(() => engine.submitAnswer('ROOM42', 'leader', stackedQuestion.correctOptionId, 105_001)).toThrow('deadline');
+    expect(engine.submitAnswer('ROOM42', 'chaser', stackedQuestion.correctOptionId, 108_000).isCorrect).toBe(true);
   });
 
   it('does not reduce leader time below five seconds', () => {
