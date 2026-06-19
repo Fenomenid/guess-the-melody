@@ -36,6 +36,7 @@ import {
   isSameAudioElementSource,
   resetQuestionAudioElement
 } from './audioScheduling';
+import { canHostKickPlayer } from './playerActions';
 import { Starfield } from './starfield';
 import './styles.css';
 
@@ -2033,7 +2034,12 @@ function PlayerRows({
           </div>
           <div className="player-row-actions">
             <b>{player.score}</b>
-            {isHost && player.id !== playerId && room.status === 'lobby' && (
+            {canHostKickPlayer({
+              isHost,
+              currentPlayerId: playerId,
+              targetPlayerId: player.id,
+              roomStatus: room.status
+            }) && (
               <button className="kick-button" type="button" aria-label={`Кикнуть ${player.name}`} onClick={() => onKickPlayer(player)}>
                 <UserMinus size={11} />
               </button>
