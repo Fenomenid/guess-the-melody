@@ -47,6 +47,53 @@ describe('GameEngine', () => {
     expect(chaser?.comebackEnergy).toBeGreaterThan(leader?.comebackEnergy ?? 0);
   });
 
+  it('automatically queues Jammer for a unique leader with an 800-point lead without spending chaser energy', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.joinRoom('ROOM42', { playerId: 'other', playerName: 'Other' });
+    engine.updateSettings('ROOM42', { comebackMode: true, rounds: 10 });
+
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100);
+    const revealed = engine.revealRound('ROOM42');
+
+    expect(revealed.comeback).toMatchObject({
+      automaticJammerQueued: true,
+      automaticJammerTargetPlayerId: 'leader',
+      automaticJammerTargetPlayerName: 'Leader'
+    });
+    expect(revealed.players.find((player) => player.id === 'chaser')?.comebackEnergy).toBe(0);
+  });
+
+  it('does not queue automatic Jammer without a unique 800-point lead', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.joinRoom('ROOM42', { playerId: 'other', playerName: 'Other' });
+    engine.updateSettings('ROOM42', { comebackMode: true, rounds: 10 });
+
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 5000);
+    engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 5100);
+    const revealed = engine.revealRound('ROOM42');
+
+    expect(revealed.comeback?.automaticJammerQueued).not.toBe(true);
+  });
+
+  it('rejects manual Jammer activation because Jammer is automatic', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.joinRoom('ROOM42', { playerId: 'other', playerName: 'Other' });
+    engine.updateSettings('ROOM42', { comebackMode: true, rounds: 10 });
+    const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 1100);
+    engine.revealRound('ROOM42');
+
+    expect(() => engine.activateComebackAbility('ROOM42', 'chaser', 'jammer')).toThrow('automatic');
+  });
+
   it('does not allow comeback abilities in solo games', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'solo', playerName: 'Solo' });
