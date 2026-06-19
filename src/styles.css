@@ -2414,6 +2414,99 @@ select:focus {
   margin: 0;
 }
 
+.final-insights .achievement-card {
+  --moment-accent: var(--accent);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--moment-accent) 38%, var(--border));
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--moment-accent) 15%, transparent), transparent 44%),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-2) 94%, var(--moment-accent)), var(--surface-2));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    inset 0 0 22px color-mix(in srgb, var(--moment-accent) 5%, transparent),
+    0 8px 24px rgba(0, 0, 0, 0.24);
+  animation: final-achievement-in 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.final-insights .achievement-card::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--moment-accent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--moment-accent) 58%, transparent);
+}
+
+.final-insights .achievement-card::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.22;
+  background:
+    linear-gradient(115deg, transparent 0 42%, color-mix(in srgb, var(--moment-accent) 16%, transparent) 42% 43%, transparent 43%),
+    repeating-linear-gradient(135deg, transparent 0 13px, rgba(255, 255, 255, 0.018) 13px 14px);
+}
+
+.final-insights .achievement-card.safe {
+  --moment-accent: var(--accent);
+}
+
+.final-insights .achievement-card.good {
+  --moment-accent: var(--success);
+}
+
+.final-insights .achievement-card.bad {
+  --moment-accent: var(--danger);
+}
+
+.final-insights .achievement-card.chaos {
+  --moment-accent: var(--gold);
+}
+
+.final-insights .achievement-card.rare {
+  --moment-accent: color-mix(in srgb, var(--gold) 72%, var(--accent-strong));
+}
+
+.final-insights .achievement-card:nth-child(2) {
+  animation-delay: 55ms;
+}
+
+.final-insights .achievement-card:nth-child(3) {
+  animation-delay: 110ms;
+}
+
+.final-insights .achievement-card:nth-child(4) {
+  animation-delay: 165ms;
+}
+
+.final-insights .achievement-card:nth-child(n + 5) {
+  animation-delay: 220ms;
+}
+
+.final-insights .achievement-card strong {
+  color: var(--text-strong);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.42);
+}
+
+.final-insights .achievement-card small {
+  color: color-mix(in srgb, var(--muted) 92%, var(--moment-accent));
+}
+
+.final-insights .achievement-icon {
+  border: 1px solid color-mix(in srgb, var(--moment-accent) 42%, var(--border));
+  background:
+    radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.44), transparent 19%),
+    linear-gradient(145deg, color-mix(in srgb, var(--moment-accent) 62%, var(--surface-2)), color-mix(in srgb, var(--moment-accent) 18%, var(--surface)));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 0 18px color-mix(in srgb, var(--moment-accent) 20%, transparent);
+}
+
 .final-insights .moment-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -2739,6 +2832,19 @@ select:focus {
   from {
     opacity: 0;
     transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes final-achievement-in {
+  from {
+    opacity: 0;
+    transform: translateY(9px) scale(0.975);
+    filter: brightness(0.78);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
   }
 }
 
