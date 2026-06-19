@@ -25,4 +25,11 @@ describe('ranking score actions layout', () => {
     expect(styles).toMatch(/\.result-page\s+\.layout\s*\{[^}]*grid-template-columns:\s*280px\s+minmax\(0,\s*1fr\);/s);
     expect(styles).toMatch(/\.round-result-grid\s*\{[^}]*grid-template-columns:\s*minmax\(360px,\s*0\.9fr\)\s+minmax\(460px,\s*1\.1fr\);/s);
   });
+
+  it('keeps every ranking tile and metric position stable', () => {
+    expect(styles).toMatch(/\.player-row\s*\{[^}]*height:\s*104px;[^}]*grid-template-columns:\s*38px\s+minmax\(0,\s*1fr\)\s+max-content;/s);
+    expect(styles).toMatch(/\.player-row-footer\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+58px;/s);
+    expect(styles).toMatch(/\.player-rank-slot\s*\{[^}]*width:\s*58px;/s);
+    expect(styles).toMatch(/\.player-effect-slot\s*\{[^}]*overflow:\s*hidden;/s);
+  });
 });
