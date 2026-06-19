@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { planRoundStart, planTrackPoolLimits } from './roundPlanning';
+import { finalizeRoundStart, planRoundStart, planTrackPoolLimits } from './roundPlanning';
 
 describe('round planning', () => {
   it('starts the answer timer after an audio warmup window', () => {
     expect(planRoundStart(10_000, 1_750)).toBe(11_750);
+  });
+
+  it('publishes and schedules the round before starting asynchronous persistence', () => {
+    const operations: string[] = [];
+    const persistence = new Promise<void>(() => undefined);
+
+    finalizeRoundStart({
+      publish: () => operations.push('publish'),
+      schedule: () => operations.push('schedule'),
+      persist: () => {
+        operations.push('persist');
+        return persistence;
+      }
+    });
+
+    expect(operations).toEqual(['publish', 'schedule', 'persist']);
   });
 
   it('loads a small initial playable pool while keeping answer options broad', () => {
