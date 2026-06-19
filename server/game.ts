@@ -486,6 +486,12 @@ export class GameEngine {
 
   resetToLobby(code: string): PublicRoom {
     const room = this.requireRoom(code);
+    for (const [playerId, player] of room.players) {
+      if (!player.connected) {
+        room.players.delete(playerId);
+      }
+    }
+    this.ensureHost(room);
     room.status = 'lobby';
     room.round = 0;
     room.currentQuestion = undefined;

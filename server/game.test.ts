@@ -730,6 +730,30 @@ describe('GameEngine', () => {
     expect(lobby.players).toEqual([expect.objectContaining({ id: 'host', connected: true, isHost: true })]);
   });
 
+  it('keeps Revansh x2 calculations limited to players who stayed for the rematch', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'middle', playerName: 'Middle' });
+    engine.joinRoom('ROOM42', { playerId: 'last', playerName: 'Last' });
+    engine.joinRoom('ROOM42', { playerId: 'left', playerName: 'Left' });
+    engine.updateSettings('ROOM42', { rounds: 1, comebackMode: true });
+    engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.disconnectPlayer('ROOM42', 'left');
+    engine.revealRound('ROOM42');
+    engine.resetToLobby('ROOM42');
+    engine.updateSettings('ROOM42', { rounds: 10 });
+
+    const firstQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 20_000);
+    engine.submitAnswer('ROOM42', 'leader', firstQuestion.correctOptionId, 20_100);
+    engine.submitAnswer('ROOM42', 'middle', firstQuestion.correctOptionId, 24_000);
+    engine.revealRound('ROOM42');
+
+    const comebackQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 40_000);
+    const result = engine.submitAnswer('ROOM42', 'last', comebackQuestion.correctOptionId, 42_000);
+
+    expect(result.scoreMultiplier).toBe(2);
+  });
+
   it('rejects duplicate answers from the same player', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
