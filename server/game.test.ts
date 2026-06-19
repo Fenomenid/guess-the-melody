@@ -715,6 +715,21 @@ describe('GameEngine', () => {
     }
   });
 
+  it('removes disconnected players when starting a rematch lobby', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.joinRoom('ROOM42', { playerId: 'guest', playerName: 'Guest' });
+    engine.updateSettings('ROOM42', { rounds: 1 });
+    engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.disconnectPlayer('ROOM42', 'guest');
+    engine.revealRound('ROOM42');
+
+    const lobby = engine.resetToLobby('ROOM42');
+
+    expect(lobby.status).toBe('lobby');
+    expect(lobby.players).toEqual([expect.objectContaining({ id: 'host', connected: true, isHost: true })]);
+  });
+
   it('rejects duplicate answers from the same player', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });
