@@ -36,6 +36,7 @@ import {
   isSameAudioElementSource,
   resetQuestionAudioElement
 } from './audioScheduling';
+import { getRankingComebackEffect } from './comebackPresentation';
 import { canHostKickPlayer } from './playerActions';
 import { Starfield } from './starfield';
 import './styles.css';
@@ -163,6 +164,10 @@ type Room = {
   comeback?: {
     queuedJammerPlayerId?: string;
     queuedJammerPlayerName?: string;
+    automaticJammerQueued?: boolean;
+    automaticJammerTargetPlayerId?: string;
+    automaticJammerTargetPlayerName?: string;
+    lastAutomaticJammerRound?: number;
     queuedTimecutPlayerId?: string;
     queuedTimecutPlayerName?: string;
     lastJammerPlayerId?: string;
@@ -1129,7 +1134,7 @@ function Lobby({
             <span>
               <strong>Реванш <em className="beta-label">(beta)</em></strong>
               <small>
-                Режим камбэка: догоняющие заряжают скиллы за правильные ответы, чтобы прижать лидера Глушилкой или Ускорителем. Лидер может выкрутиться Контрмерой, если угадает скрытый слот. Последний в рейтинге получает x2 очки за верные ответы.
+                Режим камбэка: при отрыве лидера Глушилка запускается автоматически, а догоняющие копят энергию на Ускоритель. Лидер может применить Контрмеру и угадать скрытый слот. Последний в рейтинге получает x2 очки за верные ответы.
               </small>
             </span>
           </label>
@@ -2017,9 +2022,23 @@ function PlayerRows({
 }) {
   return (
     <>
-      {players.map((player, index) => (
-        <div
-          className={['player-row', player.id === playerId ? 'self' : '', player.lastAnswer ? 'answered' : '', !player.connected ? 'offline' : '']
+      {players.map((player, index) => {
+        const comebackEffect = getRankingComebackEffect({
+          playerId: player.id,
+          automaticJammerQueued: room.comeback?.automaticJammerQueued,
+          automaticJammerTargetPlayerId: room.comeback?.automaticJammerTargetPlayerId,
+          comebackStatus: player.comebackStatus,
+          timecutActive: player.timecutActive
+        });
+        return (
+          <div
+          className={[
+            'player-row',
+            player.id === playerId ? 'self' : '',
+            player.lastAnswer ? 'answered' : '',
+            !player.connected ? 'offline' : '',
+            comebackEffect ? `comeback-effect-${comebackEffect.kind}` : ''
+          ]
             .filter(Boolean)
             .join(' ')}
           key={player.id}
@@ -2031,6 +2050,12 @@ function PlayerRows({
               {player.isHost && <KeyRound size={15} aria-label="Хост" />}
             </strong>
             <span>{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
+            {comebackEffect && (
+              <span className={`ranking-effect-badge ${comebackEffect.kind}`}>
+                {comebackEffect.kind === 'countered' ? <Zap size={12} /> : comebackEffect.kind === 'timecut' ? <Timer size={12} /> : <ScanLine size={12} />}
+                {comebackEffect.label}
+              </span>
+            )}
           </div>
           <div className="player-row-actions">
             <b>{player.score}</b>
@@ -2045,8 +2070,9 @@ function PlayerRows({
               </button>
             )}
           </div>
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -2251,16 +2277,13 @@ function ComebackAbilityPanel({
   const counterCost = 45;
   const abilityCost = 60;
   const isArmed = player.pendingComebackAbility !== undefined;
-  const jammerOwner = room.comeback?.queuedJammerPlayerId;
+  const jammerQueued = Boolean(room.comeback?.automaticJammerQueued || room.comeback?.queuedJammerPlayerId);
   const timecutOwner = room.comeback?.queuedTimecutPlayerId;
-  const jammerTaken = Boolean(jammerOwner && jammerOwner !== player.id);
   const timecutTaken = Boolean(timecutOwner && timecutOwner !== player.id);
-  const isJammerCooldown = room.players.length >= 3 && room.comeback?.lastJammerPlayerId === player.id;
   const isTimecutCooldown = room.players.length >= 3 && room.comeback?.lastTimecutPlayerId === player.id;
   const lastAttackingPlayerIds = room.comeback?.lastAttackingPlayerIds ?? [room.comeback?.lastJammerPlayerId, room.comeback?.lastTimecutPlayerId].filter(Boolean);
   const isAttackTurnBlocked = room.players.length >= 3 && lastAttackingPlayerIds.includes(player.id);
-  const canCounter = player.comebackEnergy >= counterCost && !isArmed && isLeader && Boolean(jammerOwner);
-  const canUseJammer = player.comebackEnergy >= abilityCost && !isArmed && !isLeader && !jammerTaken && !isAttackTurnBlocked && !jammerOwner;
+  const canCounter = player.comebackEnergy >= counterCost && !isArmed && isLeader && jammerQueued;
   const canUseTimecut = player.comebackEnergy >= abilityCost && !isArmed && !isLeader && !timecutTaken && !isAttackTurnBlocked && !timecutOwner;
 
   return (
@@ -2281,9 +2304,9 @@ function ComebackAbilityPanel({
         <div className="ability-copy">
           <strong>Контрмера · 45 энергии</strong>
           <small>
-            {jammerOwner
-              ? 'Глушилка уже заряжена. Предскажите один из двух скрываемых слотов: точный прогноз раскроет его и вернёт 25 энергии.'
-              : 'Контрмера станет доступна, когда кто-то зарядит Глушилку на следующий раунд.'}
+            {jammerQueued
+              ? 'Автоматическая Глушилка летит в вас. Предскажите один из двух скрываемых слотов: точный прогноз раскроет его и вернёт 25 энергии.'
+              : 'Контрмера станет доступна, когда отрыв активирует автоматическую Глушилку.'}
           </small>
           <div className="counter-slots" aria-label="Выбор слота Контрмеры">
             {[0, 1, 2, 3].map((slot) => (
@@ -2300,21 +2323,7 @@ function ComebackAbilityPanel({
           </div>
         </div>
       ) : (
-        <div className="ability-grid">
-          <div className="ability-copy">
-            <strong>Глушилка · 60 энергии</strong>
-            <small>Скроет текст двух разных случайных вариантов у лидера. Правильный ответ тоже может попасть под помеху.</small>
-            <button className={['ability-button', canUseJammer ? 'ready' : ''].filter(Boolean).join(' ')} type="button" disabled={!canUseJammer} onClick={() => onActivate('jammer')}>
-              <ScanLine size={18} />
-              {player.pendingComebackAbility === 'jammer'
-                ? 'Глушилка заряжена'
-                : jammerTaken
-                  ? `Уже зарядил ${room.comeback?.queuedJammerPlayerName}`
-                  : isAttackTurnBlocked || isJammerCooldown
-                    ? 'Сейчас очередь другого игрока'
-                    : 'Зарядить на следующий раунд'}
-            </button>
-          </div>
+        <div className="ability-grid single-ability">
           <div className="ability-copy">
             <strong>Ускоритель · 60 энергии</strong>
             <small>Сократит время лидера на песню в 2 раза, но не ниже 5 секунд.</small>
@@ -2333,6 +2342,9 @@ function ComebackAbilityPanel({
       )}
 
       {isArmed && <div className="ability-armed-notice">Заряд принят. Эффект применится автоматически при старте следующего раунда.</div>}
+      {!isLeader && room.comeback?.automaticJammerQueued && (
+        <div className="automatic-jammer-notice"><ScanLine size={15} /> Команда отстающих автоматически отправила Глушилку в лидера.</div>
+      )}
       {isAttackTurnBlocked && !isLeader && !isArmed && (
         <div className="ability-missed-notice">Сейчас не ваша очередь: вы уже использовали скилл в прошлом раунде. Дождитесь, пока его зарядит другой игрок.</div>
       )}
