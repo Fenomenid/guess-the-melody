@@ -40,6 +40,7 @@ import {
 import { buildAnswerJourney } from './answerJourney';
 import { getRankingComebackEffect } from './comebackPresentation';
 import { canHostKickPlayer } from './playerActions';
+import { getVisibleFinalPlayers } from './finalStageLayout';
 import { createGeometricAvatar, getRankingAttack } from './rankingVisuals';
 import { Starfield } from './starfield';
 import './styles.css';
@@ -2638,6 +2639,8 @@ function FinalStage({
   onResetToLobby?: () => void;
 }) {
   const podium = [room.players[1], room.players[0], room.players[2]].filter(Boolean);
+  const [rankingExpanded, setRankingExpanded] = useState(false);
+  const { visiblePlayers, hiddenCount } = getVisibleFinalPlayers(room.players, rankingExpanded);
 
   return (
     <div className="stage final-stage">
@@ -2647,25 +2650,33 @@ function FinalStage({
         <Trophy size={18} />
         <span>Победитель: {room.players[0]?.name ?? 'игрок'}</span>
       </div>
-      <div className="podium" data-count={podium.length}>
-        <div className="fireworks" aria-hidden="true">
-          {Array.from({ length: 18 }, (_, index) => (
-            <span key={index} style={{ '--x': `${8 + ((index * 37) % 84)}%`, '--delay': `${(index % 6) * 160}ms` } as React.CSSProperties} />
-          ))}
+      <div className="final-summary-grid">
+        <div className="podium" data-count={podium.length}>
+          <div className="fireworks" aria-hidden="true">
+            {Array.from({ length: 18 }, (_, index) => (
+              <span key={index} style={{ '--x': `${8 + ((index * 37) % 84)}%`, '--delay': `${(index % 6) * 160}ms` } as React.CSSProperties} />
+            ))}
+          </div>
+          {podium.map((player) => {
+            const place = room.players.findIndex((candidate) => candidate.id === player.id) + 1;
+            return (
+              <div className={`podium-place place-${place}`} key={player.id}>
+                <span>{place === 1 ? <Crown size={22} /> : place}</span>
+                <strong>{player.name}</strong>
+                <b>{player.score}</b>
+              </div>
+            );
+          })}
         </div>
-        {podium.map((player) => {
-          const place = room.players.findIndex((candidate) => candidate.id === player.id) + 1;
-          return (
-            <div className={`podium-place place-${place}`} key={player.id}>
-              <span>{place === 1 ? <Crown size={22} /> : place}</span>
-              <strong>{player.name}</strong>
-              <b>{player.score}</b>
-            </div>
-          );
-        })}
+        <div className="final-insights">
+          <RoundDramaPanel drama={room.roundDrama} />
+          <MatchMoments moments={room.matchMoments} />
+        </div>
       </div>
       <div className="result-list final-list">
-        {room.players.map((player, index) => (
+        {visiblePlayers.map((player) => {
+          const index = room.players.findIndex((candidate) => candidate.id === player.id);
+          return (
           <div className="score-row" key={player.id}>
             <span>{index === 0 ? <Crown size={18} /> : index + 1}</span>
             <strong>
@@ -2679,10 +2690,14 @@ function FinalStage({
             </small>
             <em>{player.score}</em>
           </div>
-        ))}
+          );
+        })}
       </div>
-      <MatchMoments moments={room.matchMoments} />
-      <RoundDramaPanel drama={room.roundDrama} />
+      {(hiddenCount > 0 || rankingExpanded) && room.players.length > 8 && (
+        <button className="secondary final-ranking-toggle" type="button" onClick={() => setRankingExpanded((expanded) => !expanded)}>
+          {rankingExpanded ? 'Скрыть остальных' : `Ещё ${hiddenCount} игроков`}
+        </button>
+      )}
       <div className="actions">
         {isHost && (
           <button className="primary" onClick={() => emit('reset_game', { code: room.code, playerId }, undefined, 'Возвращаем в лобби')}>
