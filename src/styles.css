@@ -986,12 +986,17 @@ h2 {
 }
 
 .player-row-actions {
-  min-width: 64px;
+  min-width: max-content;
   display: inline-grid;
-  grid-template-columns: 34px 22px;
+  grid-template-columns: max-content 22px;
   align-items: center;
   gap: 8px;
   justify-content: end;
+}
+
+.player-row-actions > b {
+  min-width: max-content;
+  white-space: nowrap;
 }
 
 .kick-button {
