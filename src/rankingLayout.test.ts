@@ -13,4 +13,10 @@ describe('ranking score actions layout', () => {
     expect(styles).toMatch(/\.self-mark\s*\{[^}]*white-space:\s*nowrap;/s);
     expect(styles).toMatch(/\.self-mark\s*\{[^}]*flex:\s*0 0 auto;/s);
   });
+
+  it('uses a compact two-column final layout on short desktop screens', () => {
+    expect(styles).toMatch(/@media\s*\(max-height:\s*1000px\)\s*and\s*\(min-width:\s*821px\)/s);
+    expect(styles).toMatch(/\.final-summary-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*0\.9fr\)\s+minmax\(320px,\s*1\.1fr\);/s);
+    expect(styles).toMatch(/\.final-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
+  });
 });
