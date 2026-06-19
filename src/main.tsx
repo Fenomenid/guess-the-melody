@@ -36,6 +36,7 @@ import {
   isSameAudioElementSource,
   resetQuestionAudioElement
 } from './audioScheduling';
+import { buildAnswerJourney } from './answerJourney';
 import { getRankingComebackEffect } from './comebackPresentation';
 import { canHostKickPlayer } from './playerActions';
 import { Starfield } from './starfield';
@@ -192,6 +193,25 @@ type AppMode = 'normal' | 'display' | 'player';
 
 function hasRevealedAnswer(player: Player): player is Player & { lastAnswer: PlayerAnswerResult } {
   return Boolean(player.lastAnswer && 'optionId' in player.lastAnswer);
+}
+
+function AnswerJourney({ player, options }: { player: Player; options: Array<{ id: string; title: string }> }) {
+  if (!hasRevealedAnswer(player)) return null;
+  const journey = buildAnswerJourney(player.lastAnswer.answerEvents, options);
+  if (journey.length === 0) return null;
+  return (
+    <span className="answer-journey" aria-label={`История ответа: ${journey.map((step) => step.title).join(', затем ')}`}>
+      {journey.map((step, index) => (
+        <React.Fragment key={`${step.optionId}-${index}`}>
+          {index > 0 && <i aria-hidden="true">→</i>}
+          <span className={index === journey.length - 1 ? 'answer-journey-step final' : 'answer-journey-step'}>
+            <b>{step.title}</b>
+            <small>{step.timeLabel}</small>
+          </span>
+        </React.Fragment>
+      ))}
+    </span>
+  );
 }
 
 const socket = io();
@@ -2415,6 +2435,7 @@ function ResultStage({
               <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>
                 {selectedOptionTitle(player)}
               </small>
+              <AnswerJourney player={player} options={room.currentQuestion?.options ?? []} />
             </strong>
             {hasRevealedAnswer(player) ? (
               <b className={['score-pop', player.lastAnswer.points < 0 ? 'penalty' : ''].filter(Boolean).join(' ')}>
@@ -2510,6 +2531,7 @@ function FinalStage({
             <strong>
               {player.name}
               <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>{selectedOptionTitle(player)}</small>
+              <AnswerJourney player={player} options={room.currentQuestion?.options ?? []} />
             </strong>
             <small>
               {hasRevealedAnswer(player) && player.lastAnswer.points ? formatSignedPoints(player.lastAnswer.points) : '0'}
