@@ -964,9 +964,11 @@ h2 {
 }
 
 .self-mark {
+  flex: 0 0 auto;
   color: var(--accent);
   font-size: 12px;
   font-weight: 900;
+  white-space: nowrap;
 }
 
 .player-name svg {
