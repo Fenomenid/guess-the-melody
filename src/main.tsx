@@ -4,6 +4,7 @@ import {
   Copy,
   Crown,
   DoorOpen,
+  Flame,
   KeyRound,
   LoaderCircle,
   LogIn,
@@ -27,7 +28,7 @@ import {
   Zap,
   X
 } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
 import {
@@ -39,6 +40,7 @@ import {
 import { buildAnswerJourney } from './answerJourney';
 import { getRankingComebackEffect } from './comebackPresentation';
 import { canHostKickPlayer } from './playerActions';
+import { createGeometricAvatar, getRankingAttack } from './rankingVisuals';
 import { Starfield } from './starfield';
 import './styles.css';
 
@@ -77,6 +79,10 @@ type Player = {
   name: string;
   score: number;
   correctAnswers: number;
+  currentStreak: number;
+  bestStreak: number;
+  rankHistory: number[];
+  rankDelta: number;
   connected: boolean;
   isHost: boolean;
   comebackEnergy: number;
@@ -104,6 +110,15 @@ type Achievement = {
 
 type MatchMoment = Achievement & {
   round: number;
+};
+
+type RoundDrama = {
+  kind: 'new-leader' | 'biggest-fall' | 'most-indecisive';
+  playerId: string;
+  playerName: string;
+  title: string;
+  description: string;
+  value: number;
 };
 
 type PlaylistSource = {
@@ -162,6 +177,7 @@ type Room = {
   };
   achievements: Achievement[];
   matchMoments: MatchMoment[];
+  roundDrama: RoundDrama[];
   comeback?: {
     queuedJammerPlayerId?: string;
     queuedJammerPlayerName?: string;
@@ -195,7 +211,15 @@ function hasRevealedAnswer(player: Player): player is Player & { lastAnswer: Pla
   return Boolean(player.lastAnswer && 'optionId' in player.lastAnswer);
 }
 
-function AnswerJourney({ player, options }: { player: Player; options: Array<{ id: string; title: string }> }) {
+function AnswerJourney({
+  player,
+  options,
+  correctOptionId
+}: {
+  player: Player;
+  options: Array<{ id: string; title: string }>;
+  correctOptionId?: string;
+}) {
   if (!hasRevealedAnswer(player)) return null;
   const journey = buildAnswerJourney(player.lastAnswer.answerEvents, options);
   if (journey.length === 0) return null;
@@ -204,7 +228,15 @@ function AnswerJourney({ player, options }: { player: Player; options: Array<{ i
       {journey.map((step, index) => (
         <React.Fragment key={`${step.optionId}-${index}`}>
           {index > 0 && <i aria-hidden="true">→</i>}
-          <span className={index === journey.length - 1 ? 'answer-journey-step final' : 'answer-journey-step'}>
+          <span
+            className={[
+              'answer-journey-step',
+              step.optionId === correctOptionId ? 'correct' : 'wrong',
+              index === journey.length - 1 ? 'final' : ''
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          >
             <b>{step.title}</b>
             <small>{step.timeLabel}</small>
           </span>
@@ -1803,6 +1835,7 @@ function PlayerRoundResult({
         <ComebackAbilityPanel room={room} player={me} onActivate={onActivateComebackAbility} />
       )}
       <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact compactMode="title" />
+      <RoundDramaPanel drama={room.roundDrama} />
       <PlayersPanel room={room} players={room.players} playerId={me?.id ?? ''} isHost={false} isQuestionStage={false} answeredCount={room.players.filter((player) => Boolean(player.lastAnswer)).length} playerCount={room.players.length} onKickPlayer={() => undefined} />
     </div>
   );
@@ -2004,10 +2037,6 @@ function PlayersPanel({
   playerCount: number;
   onKickPlayer: (player: Player) => void;
 }) {
-  const rows = (
-    <PlayerRows room={room} players={players} playerId={playerId} isHost={isHost} onKickPlayer={onKickPlayer} />
-  );
-
   return (
     <aside className={['sidebar', 'players-panel', isQuestionStage ? 'question-players-panel' : ''].filter(Boolean).join(' ')}>
       <div className="section-title">
@@ -2015,13 +2044,17 @@ function PlayersPanel({
         Игроки
         {isQuestionStage && playerCount > 1 && <span className="answered-pill">Ответили {answeredCount}/{playerCount}</span>}
       </div>
-      <div className="players players-full">{rows}</div>
+      <div className="players players-full">
+        <PlayerRows room={room} players={players} playerId={playerId} isHost={isHost} onKickPlayer={onKickPlayer} />
+      </div>
       <details className="players-collapse">
         <summary>
           <span>Игроки</span>
           <b>Ответили {answeredCount}/{playerCount}</b>
         </summary>
-        <div className="players">{rows}</div>
+        <div className="players">
+          <PlayerRows room={room} players={players} playerId={playerId} isHost={isHost} onKickPlayer={onKickPlayer} />
+        </div>
       </details>
     </aside>
   );
@@ -2040,8 +2073,50 @@ function PlayerRows({
   isHost: boolean;
   onKickPlayer: (player: Player) => void;
 }) {
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const previousTops = useRef(new Map<string, number>());
+  const attack = getRankingAttack(players, room.comeback);
+
+  useLayoutEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+    const nextTops = new Map<string, number>();
+    rowRefs.current.forEach((element, id) => {
+      const nextTop = element.getBoundingClientRect().top;
+      nextTops.set(id, nextTop);
+      const previousTop = previousTops.current.get(id);
+      if (previousTop !== undefined && Math.abs(previousTop - nextTop) > 1) {
+        element.animate(
+          [{ transform: `translateY(${previousTop - nextTop}px)` }, { transform: 'translateY(0)' }],
+          { duration: 520, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+        );
+      }
+    });
+    previousTops.current = nextTops;
+  }, [players.map((player) => player.id).join('|')]);
+
+  const sourceIndex = attack ? players.findIndex((player) => player.id === attack.sourceId) : -1;
+  const targetIndex = attack ? players.findIndex((player) => player.id === attack.targetId) : -1;
+
   return (
-    <>
+    <div className="player-rows-stack">
+      {attack && sourceIndex >= 0 && targetIndex >= 0 && sourceIndex !== targetIndex && (
+        <div
+          className={`ranking-attack-line ${attack.kind}`}
+          style={
+            {
+              '--attack-top': `${Math.min(sourceIndex, targetIndex) * 88 + 38}px`,
+              '--attack-height': `${Math.abs(sourceIndex - targetIndex) * 88}px`,
+              '--attack-icon-start': `${(sourceIndex - Math.min(sourceIndex, targetIndex)) * 88}px`,
+              '--attack-distance': `${(targetIndex - sourceIndex) * 88}px`
+            } as React.CSSProperties
+          }
+          aria-hidden="true"
+        >
+          <span>{attack.kind === 'timecut' ? <Timer size={14} /> : <ScanLine size={14} />}</span>
+        </div>
+      )}
       {players.map((player, index) => {
         const comebackEffect = getRankingComebackEffect({
           playerId: player.id,
@@ -2052,6 +2127,14 @@ function PlayerRows({
         });
         return (
           <div
+          ref={(element) => {
+            if (element) rowRefs.current.set(player.id, element);
+            else rowRefs.current.delete(player.id);
+          }}
+          className="player-row-shell"
+          key={player.id}
+        >
+          <div
           className={[
             'player-row',
             player.id === playerId ? 'self' : '',
@@ -2061,9 +2144,9 @@ function PlayerRows({
           ]
             .filter(Boolean)
             .join(' ')}
-          key={player.id}
         >
-          <div>
+          <GeometricAvatar playerId={player.id} playerName={player.name} />
+          <div className="player-row-copy">
             <strong className="player-name">
               {index + 1}. {player.name}
               {player.id === playerId && <span className="self-mark">(вы)</span>}
@@ -2076,6 +2159,10 @@ function PlayerRows({
                 {comebackEffect.label}
               </span>
             )}
+            <div className="player-metrics">
+              <StreakBadge streak={player.currentStreak} />
+              <RankTrend history={player.rankHistory} delta={player.rankDelta} />
+            </div>
           </div>
           <div className="player-row-actions">
             <b>{player.score}</b>
@@ -2091,9 +2178,61 @@ function PlayerRows({
             )}
           </div>
           </div>
+          </div>
         );
       })}
-    </>
+    </div>
+  );
+}
+
+function GeometricAvatar({ playerId, playerName }: { playerId: string; playerName: string }) {
+  const avatar = useMemo(() => createGeometricAvatar(playerId), [playerId]);
+  return (
+    <span
+      className={`geometric-avatar ${avatar.shape}`}
+      style={
+        {
+          '--avatar-hue': avatar.hue,
+          '--avatar-accent-hue': avatar.accentHue,
+          '--avatar-eye-offset': `${avatar.eyeOffset}px`,
+          '--avatar-mouth-tilt': `${avatar.mouthTilt}deg`
+        } as React.CSSProperties
+      }
+      role="img"
+      aria-label={`Аватар ${playerName}`}
+    >
+      <i className="avatar-eye left" />
+      <i className="avatar-eye right" />
+      <i className="avatar-mouth" />
+    </span>
+  );
+}
+
+function StreakBadge({ streak }: { streak: number }) {
+  if (streak < 3) return null;
+  const isLightning = streak >= 5;
+  return (
+    <span className={`streak-badge ${isLightning ? 'lightning' : 'fire'}`} title={`Серия правильных ответов: ${streak}`}>
+      {isLightning ? <Zap size={11} /> : <Flame size={11} />} ×{streak}
+    </span>
+  );
+}
+
+function RankTrend({ history, delta }: { history: number[]; delta: number }) {
+  if (history.length < 2) return null;
+  const width = 44;
+  const height = 18;
+  const maxRank = Math.max(...history, 2);
+  const points = history
+    .map((rank, index) => `${(index / (history.length - 1)) * width},${((rank - 1) / (maxRank - 1)) * (height - 4) + 2}`)
+    .join(' ');
+  return (
+    <span className={`rank-trend ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}`} title={`История мест: ${history.join(' → ')}`}>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+        <polyline points={points} />
+      </svg>
+      {delta !== 0 && <small>{delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}</small>}
+    </span>
   );
 }
 
@@ -2419,6 +2558,7 @@ function ResultStage({
         </div>
       )}
       <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact compactMode="title" />
+      <RoundDramaPanel drama={room.roundDrama} />
       {room.settings.comebackMode && room.players.length > 1 && onActivateComebackAbility && room.players.some((player) => player.id === playerId) && (
         <ComebackAbilityPanel
           room={room}
@@ -2435,7 +2575,7 @@ function ResultStage({
               <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>
                 {selectedOptionTitle(player)}
               </small>
-              <AnswerJourney player={player} options={room.currentQuestion?.options ?? []} />
+              <AnswerJourney player={player} options={room.currentQuestion?.options ?? []} correctOptionId={room.correctTrack?.id} />
             </strong>
             {hasRevealedAnswer(player) ? (
               <b className={['score-pop', player.lastAnswer.points < 0 ? 'penalty' : ''].filter(Boolean).join(' ')}>
@@ -2531,7 +2671,7 @@ function FinalStage({
             <strong>
               {player.name}
               <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>{selectedOptionTitle(player)}</small>
-              <AnswerJourney player={player} options={room.currentQuestion?.options ?? []} />
+              <AnswerJourney player={player} options={room.currentQuestion?.options ?? []} correctOptionId={room.correctTrack?.id} />
             </strong>
             <small>
               {hasRevealedAnswer(player) && player.lastAnswer.points ? formatSignedPoints(player.lastAnswer.points) : '0'}
@@ -2542,6 +2682,7 @@ function FinalStage({
         ))}
       </div>
       <MatchMoments moments={room.matchMoments} />
+      <RoundDramaPanel drama={room.roundDrama} />
       <div className="actions">
         {isHost && (
           <button className="primary" onClick={() => emit('reset_game', { code: room.code, playerId }, undefined, 'Возвращаем в лобби')}>
@@ -2557,6 +2698,34 @@ function FinalStage({
         )}
       </div>
     </div>
+  );
+}
+
+function RoundDramaPanel({ drama }: { drama: RoundDrama[] }) {
+  if (drama.length === 0) return null;
+  const icons: Record<RoundDrama['kind'], string> = {
+    'new-leader': '👑',
+    'biggest-fall': '📉',
+    'most-indecisive': '🔀'
+  };
+  return (
+    <section className="round-drama" aria-label="Драма раунда">
+      <div className="section-title">
+        <Sparkles size={17} />
+        Драма раунда
+      </div>
+      <div className="round-drama-grid">
+        {drama.map((item) => (
+          <article className={`round-drama-card ${item.kind}`} key={`${item.kind}-${item.playerId}`}>
+            <span aria-hidden="true">{icons[item.kind]}</span>
+            <div>
+              <strong>{item.title}</strong>
+              <small>{item.description}</small>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

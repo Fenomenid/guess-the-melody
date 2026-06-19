@@ -975,6 +975,67 @@ describe('GameEngine', () => {
     expect(revealed.achievements.some((achievement) => achievement.title === 'Я так и хотел')).toBe(true);
   });
 
+  it('tracks correct-answer streaks and resets them after a miss', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.updateSettings('ROOM42', { rounds: 10 });
+
+    for (let round = 0; round < 5; round += 1) {
+      const startedAt = 1_000 + round * 20_000;
+      const question = engine.startNextRound('ROOM42', tracks, 10_000, startedAt);
+      engine.submitAnswer('ROOM42', 'host', question.correctOptionId, startedAt + 1_000);
+      engine.revealRound('ROOM42');
+    }
+
+    expect(engine.getPublicRoom('ROOM42').players[0]).toMatchObject({
+      currentStreak: 5,
+      bestStreak: 5
+    });
+
+    const missStartedAt = 120_000;
+    const missQuestion = engine.startNextRound('ROOM42', tracks, 10_000, missStartedAt);
+    const wrongOption = missQuestion.options.find((option) => option.id !== missQuestion.correctOptionId)!;
+    engine.submitAnswer('ROOM42', 'host', wrongOption.id, missStartedAt + 1_000);
+    const revealed = engine.revealRound('ROOM42');
+
+    expect(revealed.players[0]).toMatchObject({
+      currentStreak: 0,
+      bestStreak: 5
+    });
+  });
+
+  it('publishes rank history and round drama after positions change', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'host', playerName: 'Host' });
+    engine.joinRoom('ROOM42', { playerId: 'guest', playerName: 'Guest' });
+    engine.updateSettings('ROOM42', { rounds: 4, allowAnswerChange: true });
+
+    const first = engine.startNextRound('ROOM42', tracks, 10_000, 1_000);
+    const firstWrong = first.options.find((option) => option.id !== first.correctOptionId)!;
+    engine.submitAnswer('ROOM42', 'host', first.correctOptionId, 10_000);
+    engine.submitAnswer('ROOM42', 'guest', firstWrong.id, 2_000);
+    engine.revealRound('ROOM42');
+
+    const second = engine.startNextRound('ROOM42', tracks, 10_000, 20_000);
+    const secondWrong = second.options.find((option) => option.id !== second.correctOptionId)!;
+    engine.submitAnswer('ROOM42', 'guest', secondWrong.id, 20_500);
+    engine.submitAnswer('ROOM42', 'guest', second.correctOptionId, 21_000);
+    engine.submitAnswer('ROOM42', 'host', secondWrong.id, 21_500);
+    const revealed = engine.revealRound('ROOM42');
+    const host = revealed.players.find((player) => player.id === 'host');
+    const guest = revealed.players.find((player) => player.id === 'guest');
+
+    expect(host).toMatchObject({ rankHistory: [1, 2], rankDelta: -1 });
+    expect(guest).toMatchObject({ rankHistory: [2, 1], rankDelta: 1 });
+    expect(revealed.roundDrama).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'new-leader', playerId: 'guest' }),
+        expect.objectContaining({ kind: 'biggest-fall', playerId: 'host', value: 1 }),
+        expect.objectContaining({ kind: 'most-indecisive', playerId: 'guest', value: 1 })
+      ])
+    );
+  });
+
   it('publishes adaptive final match moments in groups of three', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });

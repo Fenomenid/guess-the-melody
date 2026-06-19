@@ -11,6 +11,7 @@ import type {
   PublicRoom,
   QuestionInternal,
   RoomSettings,
+  RoundDrama,
   RoomStatus,
   Track,
   TrackMetadata,
@@ -59,6 +60,7 @@ type Room = {
   usedTrackIds: Set<string>;
   usedOptionTitles: Set<string>;
   roundHistory: RoundHistoryEntry[];
+  roundDrama: RoundDrama[];
   comeback: ComebackState;
   round: number;
 };
@@ -72,6 +74,7 @@ export type SerializedRoom = {
   usedTrackIds: string[];
   usedOptionTitles?: string[];
   roundHistory?: RoundHistoryEntry[];
+  roundDrama?: RoundDrama[];
   comeback?: ComebackState;
   round: number;
 };
@@ -138,6 +141,7 @@ export class GameEngine {
       usedTrackIds: new Set(),
       usedOptionTitles: new Set(),
       roundHistory: [],
+      roundDrama: [],
       comeback: {},
       round: 0
     };
@@ -160,6 +164,7 @@ export class GameEngine {
       usedTrackIds: new Set(),
       usedOptionTitles: new Set(),
       roundHistory: [],
+      roundDrama: [],
       comeback: {},
       round: 0
     };
@@ -483,10 +488,15 @@ export class GameEngine {
     room.round = 0;
     room.currentQuestion = undefined;
     room.roundHistory = [];
+    room.roundDrama = [];
     room.comeback = {};
     for (const player of room.players.values()) {
       player.score = 0;
       player.correctAnswers = 0;
+      player.currentStreak = 0;
+      player.bestStreak = 0;
+      player.rankHistory = [];
+      player.rankDelta = 0;
       player.comebackEnergy = 0;
       player.pendingComebackAbility = undefined;
       player.counterPrediction = undefined;
@@ -574,6 +584,7 @@ export class GameEngine {
       usedTrackIds: [...room.usedTrackIds],
       usedOptionTitles: [...room.usedOptionTitles],
       roundHistory: room.roundHistory,
+      roundDrama: room.roundDrama,
       comeback: room.comeback,
       round: room.round
     }));
@@ -593,6 +604,10 @@ export class GameEngine {
             {
               ...player,
               correctAnswers: player.correctAnswers ?? 0,
+              currentStreak: player.currentStreak ?? 0,
+              bestStreak: player.bestStreak ?? 0,
+              rankHistory: player.rankHistory ?? [],
+              rankDelta: player.rankDelta ?? 0,
               comebackEnergy: player.comebackEnergy ?? 0,
               connected: false,
               lastAnswer: undefined,
@@ -610,6 +625,7 @@ export class GameEngine {
         usedTrackIds: new Set(snapshot.usedTrackIds),
         usedOptionTitles: new Set(snapshot.usedOptionTitles ?? []),
         roundHistory: snapshot.roundHistory ?? [],
+        roundDrama: snapshot.roundDrama ?? [],
         comeback: snapshot.comeback ?? {},
         round: restoredStatus === 'finished' ? snapshot.round : 0
       };
@@ -632,12 +648,28 @@ export class GameEngine {
       return;
     }
 
+    const previousRanking = rankedPlayers(room);
+    const previousRanks = new Map(previousRanking.map((player, index) => [player.id, index + 1]));
+    const previousLeaderId = previousRanking[0]?.id;
+
     for (const player of room.players.values()) {
       player.score += player.lastAnswer?.points ?? 0;
       if (player.lastAnswer?.isCorrect) {
         player.correctAnswers += 1;
+        player.currentStreak += 1;
+        player.bestStreak = Math.max(player.bestStreak, player.currentStreak);
+      } else {
+        player.currentStreak = 0;
       }
     }
+    const nextRanking = rankedPlayers(room);
+    for (const [index, player] of nextRanking.entries()) {
+      const nextRank = index + 1;
+      const previousRank = previousRanks.get(player.id) ?? nextRank;
+      player.rankDelta = previousRank - nextRank;
+      player.rankHistory = [...player.rankHistory, nextRank].slice(-8);
+    }
+    room.roundDrama = buildRoundDrama(room, previousLeaderId);
     if (room.settings.comebackMode) {
       this.awardComebackEnergy(room);
     }
@@ -800,6 +832,7 @@ function toPublicRoom(room: Room, revealCorrectTrack = false): PublicRoom {
     correctTrack: revealCorrectTrack ? room.currentQuestion?.correctTrack : undefined,
     achievements: room.settings.achievementsEnabled ? buildAchievements(room, revealCorrectTrack) : [],
     matchMoments: room.settings.achievementsEnabled && room.status === 'finished' ? buildMatchMoments(room.roundHistory) : [],
+    roundDrama: revealCorrectTrack ? room.roundDrama : [],
     comeback: room.settings.comebackMode ? room.comeback : undefined,
     round: room.round,
     serverTime: Date.now()
@@ -840,6 +873,50 @@ function rankedPlayers(room: Room): Player[] {
       right.correctAnswers - left.correctAnswers ||
       left.name.localeCompare(right.name, 'ru')
   );
+}
+
+function buildRoundDrama(room: Room, previousLeaderId?: string): RoundDrama[] {
+  const ranking = rankedPlayers(room);
+  const drama: RoundDrama[] = [];
+  const leader = ranking[0];
+  if (leader && previousLeaderId && leader.id !== previousLeaderId) {
+    drama.push({
+      kind: 'new-leader',
+      playerId: leader.id,
+      playerName: leader.name,
+      title: 'Новый лидер',
+      description: `${leader.name} вырвался на первое место.`,
+      value: Math.max(1, leader.rankDelta)
+    });
+  }
+
+  const biggestFall = [...ranking].filter((player) => player.rankDelta < 0).sort((a, b) => a.rankDelta - b.rankDelta)[0];
+  if (biggestFall) {
+    drama.push({
+      kind: 'biggest-fall',
+      playerId: biggestFall.id,
+      playerName: biggestFall.name,
+      title: 'Падение раунда',
+      description: `${biggestFall.name} потерял ${Math.abs(biggestFall.rankDelta)} мест.`,
+      value: Math.abs(biggestFall.rankDelta)
+    });
+  }
+
+  const mostIndecisive = [...room.players.values()]
+    .filter((player) => (player.lastAnswer?.answerChanges ?? 0) > 0)
+    .sort((a, b) => (b.lastAnswer?.answerChanges ?? 0) - (a.lastAnswer?.answerChanges ?? 0))[0];
+  if (mostIndecisive?.lastAnswer) {
+    drama.push({
+      kind: 'most-indecisive',
+      playerId: mostIndecisive.id,
+      playerName: mostIndecisive.name,
+      title: 'Передумал больше всех',
+      description: `${mostIndecisive.name} сменил ответ ${mostIndecisive.lastAnswer.answerChanges} раз.`,
+      value: mostIndecisive.lastAnswer.answerChanges
+    });
+  }
+
+  return drama;
 }
 
 function publicAnswerPoints(player: PublicPlayer): number {
@@ -1758,6 +1835,10 @@ function createPlayer(input: PlayerInput, isHost: boolean): Player {
     name: sanitizeName(input.playerName),
     score: 0,
     correctAnswers: 0,
+    currentStreak: 0,
+    bestStreak: 0,
+    rankHistory: [],
+    rankDelta: 0,
     connected: true,
     isHost,
     comebackEnergy: 0

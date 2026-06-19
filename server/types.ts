@@ -51,6 +51,10 @@ export type Player = {
   name: string;
   score: number;
   correctAnswers: number;
+  currentStreak: number;
+  bestStreak: number;
+  rankHistory: number[];
+  rankDelta: number;
   connected: boolean;
   isHost: boolean;
   comebackEnergy: number;
@@ -107,6 +111,15 @@ export type MatchMoment = Achievement & {
   round: number;
 };
 
+export type RoundDrama = {
+  kind: 'new-leader' | 'biggest-fall' | 'most-indecisive';
+  playerId: string;
+  playerName: string;
+  title: string;
+  description: string;
+  value: number;
+};
+
 export type PlaylistSource = {
   url: string;
   name: string;
@@ -161,6 +174,7 @@ export type PublicRoom = {
   correctTrack?: Track;
   achievements: Achievement[];
   matchMoments: MatchMoment[];
+  roundDrama: RoundDrama[];
   comeback?: ComebackState;
   round: number;
   serverTime: number;
