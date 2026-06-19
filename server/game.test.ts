@@ -961,28 +961,6 @@ describe('GameEngine', () => {
     expect(changeChain.map((achievement) => achievement.chainStep)).toEqual([1, 2, 3, 4]);
   });
 
-  it('does not leak feedback through live achievements for a jammed player', () => {
-    const randomValues = [0.1, 0.8];
-    const engine = new GameEngine(() => 'ROOM42', () => randomValues.shift() ?? 0.5);
-    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
-    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
-    engine.joinRoom('ROOM42', { playerId: 'other', playerName: 'Other' });
-    engine.updateSettings('ROOM42', { comebackMode: true, allowAnswerChange: true, rounds: 10 });
-
-    const setupQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 1_000);
-    engine.submitAnswer('ROOM42', 'leader', setupQuestion.correctOptionId, 1_100);
-    engine.revealRound('ROOM42');
-
-    const jammedQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 20_000);
-    const leader = engine.getPublicRoom('ROOM42').players.find((player) => player.id === 'leader');
-    expect(leader?.hiddenOptionIndexes).toHaveLength(2);
-
-    engine.submitAnswer('ROOM42', 'leader', jammedQuestion.correctOptionId, 20_500);
-    const liveRoom = engine.getPublicRoom('ROOM42');
-
-    expect(liveRoom.achievements).toEqual([]);
-  });
-
   it('detects leaving the correct answer after reveal', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'host', playerName: 'Host' });

@@ -937,10 +937,7 @@ function buildLiveAchievements(room: Room): Achievement[] {
   }
 
   const answers = [...room.players.values()]
-    .filter(
-      (player): player is Player & { lastAnswer: PlayerAnswerResult } =>
-        Boolean(player.lastAnswer) && !player.hiddenOptionIndexes?.length
-    )
+    .filter((player): player is Player & { lastAnswer: PlayerAnswerResult } => Boolean(player.lastAnswer))
     .sort((a, b) => a.lastAnswer.responseMs - b.lastAnswer.responseMs);
   const achievements: ScoredAchievement[] = [];
   const first = answers[0];
