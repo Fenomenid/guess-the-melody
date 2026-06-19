@@ -19,4 +19,10 @@ describe('ranking score actions layout', () => {
     expect(styles).toMatch(/\.final-summary-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*0\.9fr\)\s+minmax\(320px,\s*1\.1fr\);/s);
     expect(styles).toMatch(/\.final-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
   });
+
+  it('uses the free desktop width for result screens', () => {
+    expect(styles).toMatch(/\.page\.result-page\s*\{[^}]*width:\s*min\(1560px,\s*100%\);/s);
+    expect(styles).toMatch(/\.result-page\s+\.layout\s*\{[^}]*grid-template-columns:\s*280px\s+minmax\(0,\s*1fr\);/s);
+    expect(styles).toMatch(/\.round-result-grid\s*\{[^}]*grid-template-columns:\s*minmax\(360px,\s*0\.9fr\)\s+minmax\(460px,\s*1\.1fr\);/s);
+  });
 });
