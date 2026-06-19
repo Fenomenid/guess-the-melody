@@ -81,6 +81,26 @@ describe('GameEngine', () => {
     expect(revealed.comeback?.automaticJammerQueued).not.toBe(true);
   });
 
+  it('does not queue automatic Jammer for consecutive rounds', () => {
+    const engine = new GameEngine(() => 'ROOM42');
+    engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
+    engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.joinRoom('ROOM42', { playerId: 'other', playerName: 'Other' });
+    engine.updateSettings('ROOM42', { comebackMode: true, rounds: 10 });
+
+    const first = engine.startNextRound('ROOM42', tracks, 10_000, 1000);
+    engine.submitAnswer('ROOM42', 'leader', first.correctOptionId, 1100);
+    expect(engine.revealRound('ROOM42').comeback?.automaticJammerQueued).toBe(true);
+
+    const second = engine.startNextRound('ROOM42', tracks, 10_000, 20_000);
+    engine.submitAnswer('ROOM42', 'leader', second.correctOptionId, 20_100);
+    expect(engine.revealRound('ROOM42').comeback?.automaticJammerQueued).not.toBe(true);
+
+    const third = engine.startNextRound('ROOM42', tracks, 10_000, 40_000);
+    engine.submitAnswer('ROOM42', 'leader', third.correctOptionId, 40_100);
+    expect(engine.revealRound('ROOM42').comeback?.automaticJammerQueued).toBe(true);
+  });
+
   it('rejects manual Jammer activation because Jammer is automatic', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
@@ -111,6 +131,7 @@ describe('GameEngine', () => {
     const engine = new GameEngine(() => 'ROOM42', () => randomValues.shift() ?? 0.5);
     engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
     engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.joinRoom('ROOM42', { playerId: 'other', playerName: 'Other' });
     engine.updateSettings('ROOM42', { comebackMode: true });
 
     for (let round = 0; round < 3; round += 1) {
@@ -119,9 +140,6 @@ describe('GameEngine', () => {
       engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 9000 + round * 20_000);
       engine.revealRound('ROOM42');
     }
-
-    const armed = engine.activateComebackAbility('ROOM42', 'chaser');
-    expect(armed.comeback?.queuedJammerPlayerId).toBe('chaser');
 
     engine.startNextRound('ROOM42', tracks, 10_000, 100_000);
     const nextRoom = engine.getPublicRoom('ROOM42');
@@ -139,16 +157,18 @@ describe('GameEngine', () => {
     const engine = new GameEngine(() => 'ROOM42', () => randomValues.shift() ?? 0.1);
     engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
     engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
+    engine.joinRoom('ROOM42', { playerId: 'other', playerName: 'Other' });
     engine.updateSettings('ROOM42', { comebackMode: true });
 
     for (let round = 0; round < 3; round += 1) {
       const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000 + round * 20_000);
       engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100 + round * 20_000);
-      engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 9000 + round * 20_000);
+      if (round < 2) {
+        engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 1200 + round * 20_000);
+      }
       engine.revealRound('ROOM42');
     }
 
-    engine.activateComebackAbility('ROOM42', 'chaser');
     engine.activateComebackAbility('ROOM42', 'leader', 2);
     const energyBefore = engine.getPublicRoom('ROOM42').players.find((player) => player.id === 'leader')?.comebackEnergy ?? 0;
 
@@ -165,7 +185,7 @@ describe('GameEngine', () => {
     expect(revealed.achievements.some((achievement) => achievement.title === 'Контрразведка')).toBe(true);
   });
 
-  it('prevents the same player from arming Jammer twice in a row when at least three players are present', () => {
+  it('keeps automatic Jammer independent from player ability turns', () => {
     const engine = new GameEngine(() => 'ROOM42');
     engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
     engine.joinRoom('ROOM42', { playerId: 'chaser', playerName: 'Chaser' });
@@ -176,19 +196,17 @@ describe('GameEngine', () => {
       const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000 + round * 20_000);
       engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100 + round * 20_000);
       engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 8000 + round * 20_000);
-      engine.submitAnswer('ROOM42', 'other', question.correctOptionId, 8500 + round * 20_000);
       engine.revealRound('ROOM42');
     }
 
-    engine.activateComebackAbility('ROOM42', 'chaser');
     const jammedQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 100_000);
     engine.submitAnswer('ROOM42', 'leader', jammedQuestion.correctOptionId, 101_000);
     engine.submitAnswer('ROOM42', 'chaser', jammedQuestion.correctOptionId, 108_000);
     engine.submitAnswer('ROOM42', 'other', jammedQuestion.correctOptionId, 108_500);
     engine.revealRound('ROOM42');
 
-    expect(() => engine.activateComebackAbility('ROOM42', 'chaser')).toThrow('another player');
-    expect(engine.activateComebackAbility('ROOM42', 'other').comeback?.queuedJammerPlayerId).toBe('other');
+    expect(() => engine.activateComebackAbility('ROOM42', 'chaser', 'jammer')).toThrow('automatic');
+    expect(engine.activateComebackAbility('ROOM42', 'chaser', 'timecut').comeback?.queuedTimecutPlayerId).toBe('chaser');
   });
 
   it('prevents the same player from arming another attacking ability before another player takes a turn', () => {
@@ -206,7 +224,7 @@ describe('GameEngine', () => {
       engine.revealRound('ROOM42');
     }
 
-    engine.activateComebackAbility('ROOM42', 'chaser', 'jammer');
+    engine.activateComebackAbility('ROOM42', 'chaser', 'timecut');
     const jammedQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 100_000);
     engine.submitAnswer('ROOM42', 'leader', jammedQuestion.correctOptionId, 101_000);
     engine.submitAnswer('ROOM42', 'chaser', jammedQuestion.correctOptionId, 108_000);
@@ -217,7 +235,7 @@ describe('GameEngine', () => {
     expect(engine.activateComebackAbility('ROOM42', 'other', 'timecut').comeback?.queuedTimecutPlayerId).toBe('other');
   });
 
-  it('allows different chasers to stack Jammer and Timecut while one player can arm only one ability', () => {
+  it('allows automatic Jammer and a player Timecut to stack', () => {
     const randomValues = [0.1, 0.8];
     const engine = new GameEngine(() => 'ROOM42', () => randomValues.shift() ?? 0.5);
     engine.createRoom({ playerId: 'leader', playerName: 'Leader' });
@@ -229,16 +247,13 @@ describe('GameEngine', () => {
       const question = engine.startNextRound('ROOM42', tracks, 10_000, 1000 + round * 20_000);
       engine.submitAnswer('ROOM42', 'leader', question.correctOptionId, 1100 + round * 20_000);
       engine.submitAnswer('ROOM42', 'chaser', question.correctOptionId, 8000 + round * 20_000);
-      engine.submitAnswer('ROOM42', 'other', question.correctOptionId, 8500 + round * 20_000);
       engine.revealRound('ROOM42');
     }
 
-    engine.activateComebackAbility('ROOM42', 'chaser', 'jammer');
-    expect(() => engine.activateComebackAbility('ROOM42', 'chaser', 'timecut')).toThrow('already has an ability');
-    const armed = engine.activateComebackAbility('ROOM42', 'other', 'timecut');
+    const armed = engine.activateComebackAbility('ROOM42', 'chaser', 'timecut');
 
-    expect(armed.comeback?.queuedJammerPlayerId).toBe('chaser');
-    expect(armed.comeback?.queuedTimecutPlayerId).toBe('other');
+    expect(armed.comeback?.automaticJammerQueued).toBe(true);
+    expect(armed.comeback?.queuedTimecutPlayerId).toBe('chaser');
 
     const stackedQuestion = engine.startNextRound('ROOM42', tracks, 10_000, 100_000);
     const active = engine.getPublicRoom('ROOM42');

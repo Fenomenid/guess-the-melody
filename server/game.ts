@@ -108,11 +108,12 @@ const ANSWER_CHANGE_PENALTY = 50;
 const MIN_CORRECT_POINTS = 100;
 const MAX_WRONG_PENALTY = 150;
 const MAX_COMEBACK_ENERGY = 100;
-const JAMMER_COST = 60;
 const TIMECUT_COST = 60;
 const COUNTER_COST = 45;
 const COUNTER_REWARD = 25;
 const MIN_TIMECUT_DURATION_MS = 5_000;
+const AUTOMATIC_JAMMER_SCORE_GAP = 800;
+const AUTOMATIC_JAMMER_ROUND_INTERVAL = 2;
 
 export class GameEngine {
   private readonly rooms = new Map<string, Room>();
@@ -271,11 +272,15 @@ export class GameEngine {
     const selectedAbility: ComebackAbility = typeof ability === 'number' ? 'counter' : ability;
     const selectedCounterPrediction = typeof ability === 'number' ? ability : counterPrediction;
 
+    if (selectedAbility === 'jammer') {
+      throw new Error('Jammer is automatic in Revansh mode');
+    }
+
     if (leader.id === player.id || selectedAbility === 'counter') {
       if (leader.id !== player.id) {
         throw new Error('Only the leader can arm Countermeasure');
       }
-      if (!room.comeback.queuedJammerPlayerId) {
+      if (!room.comeback.queuedJammerPlayerId && !room.comeback.automaticJammerQueued) {
         throw new Error('Countermeasure can only be armed against a queued Jammer');
       }
       if (!Number.isInteger(selectedCounterPrediction) || selectedCounterPrediction! < 0 || selectedCounterPrediction! > 3) {
@@ -299,28 +304,6 @@ export class GameEngine {
     }
     if (room.players.size >= 3 && room.comeback.lastAttackingPlayerIds?.includes(player.id)) {
       throw new Error('Let another player use a comeback ability before using one again');
-    }
-
-    if (selectedAbility === 'jammer') {
-      if (room.comeback.queuedJammerPlayerId) {
-        throw new Error('Jammer is already armed for the next round');
-      }
-      if (room.players.size >= 3 && room.comeback.lastJammerPlayerId === player.id) {
-        throw new Error('Let another player use Jammer before using it again');
-      }
-      if (player.comebackEnergy < JAMMER_COST) {
-        throw new Error('Not enough energy for Jammer');
-      }
-
-      player.comebackEnergy -= JAMMER_COST;
-      player.pendingComebackAbility = 'jammer';
-      player.comebackStatus = 'armed';
-      room.comeback = {
-        ...room.comeback,
-        queuedJammerPlayerId: player.id,
-        queuedJammerPlayerName: player.name
-      };
-      return toPublicRoom(room, true);
     }
 
     if (selectedAbility !== 'timecut') {
@@ -480,7 +463,11 @@ export class GameEngine {
   revealRound(code: string): PublicRoom {
     const room = this.requireRoom(code);
     this.applyRoundScores(room);
-    room.status = isGameFinished(room) ? 'finished' : 'round-result';
+    const finished = isGameFinished(room);
+    room.status = finished ? 'finished' : 'round-result';
+    if (!finished) {
+      this.queueAutomaticJammer(room);
+    }
     return toPublicRoom(room, true);
   }
 
@@ -674,22 +661,59 @@ export class GameEngine {
     });
   }
 
-  private applyComebackEffects(room: Room): void {
-    if (!room.settings.comebackMode || (!room.comeback.queuedJammerPlayerId && !room.comeback.queuedTimecutPlayerId)) {
+  private queueAutomaticJammer(room: Room): void {
+    if (!room.settings.comebackMode || room.comeback.automaticJammerQueued) {
       return;
     }
 
-    const leader = rankedPlayers(room)[0];
+    const ranking = rankedPlayers(room).filter((player) => player.connected);
+    if (ranking.length < 3) {
+      return;
+    }
+    const leader = ranking[0];
+    const runnerUp = ranking[1];
+    if (!leader || !runnerUp || leader.score === runnerUp.score || leader.score - runnerUp.score < AUTOMATIC_JAMMER_SCORE_GAP) {
+      return;
+    }
+
+    const nextRound = room.round + 1;
+    const lastAutomaticRound = room.comeback.lastAutomaticJammerRound ?? Number.NEGATIVE_INFINITY;
+    if (nextRound - lastAutomaticRound < AUTOMATIC_JAMMER_ROUND_INTERVAL) {
+      return;
+    }
+
+    room.comeback = {
+      ...room.comeback,
+      automaticJammerQueued: true,
+      automaticJammerTargetPlayerId: leader.id,
+      automaticJammerTargetPlayerName: leader.name
+    };
+  }
+
+  private applyComebackEffects(room: Room): void {
+    if (
+      !room.settings.comebackMode ||
+      (!room.comeback.queuedJammerPlayerId && !room.comeback.automaticJammerQueued && !room.comeback.queuedTimecutPlayerId)
+    ) {
+      return;
+    }
+
+    const automaticTarget = room.comeback.automaticJammerTargetPlayerId
+      ? room.players.get(room.comeback.automaticJammerTargetPlayerId)
+      : undefined;
+    const leader = automaticTarget?.connected ? automaticTarget : rankedPlayers(room)[0];
     if (!leader || !room.currentQuestion) {
       room.comeback = {};
       return;
     }
 
-    const nextComeback: ComebackState = {};
+    const nextComeback: ComebackState = {
+      lastAutomaticJammerRound: room.comeback.lastAutomaticJammerRound
+    };
     const lastAttackingPlayerIds = new Set<string>();
 
     const jammer = room.comeback.queuedJammerPlayerId ? room.players.get(room.comeback.queuedJammerPlayerId) : undefined;
-    if (jammer) {
+    if (jammer || room.comeback.automaticJammerQueued) {
       const firstHiddenIndex = Math.min(3, Math.floor(this.random() * 4));
       let secondHiddenIndex = Math.min(3, Math.floor(this.random() * 4));
       if (secondHiddenIndex === firstHiddenIndex) {
@@ -706,13 +730,19 @@ export class GameEngine {
         leader.comebackStatus = leader.pendingComebackAbility === 'counter' ? 'missed' : 'jammed';
       }
 
-      jammer.pendingComebackAbility = undefined;
-      jammer.comebackStatus = undefined;
+      if (jammer) {
+        jammer.pendingComebackAbility = undefined;
+        jammer.comebackStatus = undefined;
+      }
       leader.pendingComebackAbility = undefined;
       leader.counterPrediction = undefined;
-      nextComeback.lastJammerPlayerId = jammer.id;
-      nextComeback.lastJammerPlayerName = jammer.name;
-      lastAttackingPlayerIds.add(jammer.id);
+      if (jammer) {
+        nextComeback.lastJammerPlayerId = jammer.id;
+        nextComeback.lastJammerPlayerName = jammer.name;
+        lastAttackingPlayerIds.add(jammer.id);
+      } else {
+        nextComeback.lastAutomaticJammerRound = room.round;
+      }
     }
 
     const timecutter = room.comeback.queuedTimecutPlayerId ? room.players.get(room.comeback.queuedTimecutPlayerId) : undefined;

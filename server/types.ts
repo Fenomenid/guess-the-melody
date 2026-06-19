@@ -139,6 +139,10 @@ export type RoomSettings = {
 export type ComebackState = {
   queuedJammerPlayerId?: string;
   queuedJammerPlayerName?: string;
+  automaticJammerQueued?: boolean;
+  automaticJammerTargetPlayerId?: string;
+  automaticJammerTargetPlayerName?: string;
+  lastAutomaticJammerRound?: number;
   queuedTimecutPlayerId?: string;
   queuedTimecutPlayerName?: string;
   lastJammerPlayerId?: string;
