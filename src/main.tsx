@@ -2543,51 +2543,57 @@ function ResultStage({
   return (
     <div className="stage result-stage">
       <h2>Раунд завершен</h2>
-      {room.correctTrack && (
-        <div className="solution">
-          {room.correctTrack.coverUrl ? <img className="track-cover result-cover" src={room.correctTrack.coverUrl} alt="" /> : <Music2 size={24} />}
-          <div>
-            <strong>{room.correctTrack.title}</strong>
-            <span>{room.correctTrack.artist}</span>
-            {room.correctTrack.sourceName && <small>Источник: {room.correctTrack.sourceName}</small>}
-            {room.correctTrack.trackUrl && (
-              <a className="track-link" href={room.correctTrack.trackUrl} target="_blank" rel="noreferrer">
-                Открыть в Яндекс Музыке
-              </a>
-            )}
+      <div className="round-result-grid">
+        <div className="round-result-primary">
+          {room.correctTrack && (
+            <div className="solution">
+              {room.correctTrack.coverUrl ? <img className="track-cover result-cover" src={room.correctTrack.coverUrl} alt="" /> : <Music2 size={24} />}
+              <div>
+                <strong>{room.correctTrack.title}</strong>
+                <span>{room.correctTrack.artist}</span>
+                {room.correctTrack.sourceName && <small>Источник: {room.correctTrack.sourceName}</small>}
+                {room.correctTrack.trackUrl && (
+                  <a className="track-link" href={room.correctTrack.trackUrl} target="_blank" rel="noreferrer">
+                    Открыть в Яндекс Музыке
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+          {room.settings.comebackMode && room.players.length > 1 && onActivateComebackAbility && room.players.some((player) => player.id === playerId) && (
+            <ComebackAbilityPanel
+              room={room}
+              player={room.players.find((player) => player.id === playerId)!}
+              onActivate={onActivateComebackAbility}
+            />
+          )}
+        </div>
+        <div className="round-result-secondary">
+          <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact compactMode="title" />
+          <RoundDramaPanel drama={room.roundDrama} />
+          <div className="result-list round-result-list" aria-label="Очки раунда">
+            {room.players.map((player, index) => (
+              <div className="score-row" key={player.id}>
+                <span>{index === 0 ? <Crown size={18} /> : index + 1}</span>
+                <strong>
+                  {player.name}
+                  <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>
+                    {selectedOptionTitle(player)}
+                  </small>
+                  <AnswerJourney player={player} options={room.currentQuestion?.options ?? []} correctOptionId={room.correctTrack?.id} />
+                </strong>
+                {hasRevealedAnswer(player) ? (
+                  <b className={['score-pop', player.lastAnswer.points < 0 ? 'penalty' : ''].filter(Boolean).join(' ')}>
+                    {formatSignedPoints(player.lastAnswer.points)}
+                    {player.lastAnswer.scoreNote && <small className="score-note">({player.lastAnswer.scoreNote})</small>}
+                  </b>
+                ) : (
+                  <small>0</small>
+                )}
+              </div>
+            ))}
           </div>
         </div>
-      )}
-      <AchievementShelf achievements={room.achievements} title="Ачивки раунда" compact compactMode="title" />
-      <RoundDramaPanel drama={room.roundDrama} />
-      {room.settings.comebackMode && room.players.length > 1 && onActivateComebackAbility && room.players.some((player) => player.id === playerId) && (
-        <ComebackAbilityPanel
-          room={room}
-          player={room.players.find((player) => player.id === playerId)!}
-          onActivate={onActivateComebackAbility}
-        />
-      )}
-      <div className="result-list round-result-list" aria-label="Очки раунда">
-        {room.players.map((player, index) => (
-          <div className="score-row" key={player.id}>
-            <span>{index === 0 ? <Crown size={18} /> : index + 1}</span>
-            <strong>
-              {player.name}
-              <small className={hasRevealedAnswer(player) && player.lastAnswer.isCorrect ? 'answer-summary correct' : 'answer-summary'}>
-                {selectedOptionTitle(player)}
-              </small>
-              <AnswerJourney player={player} options={room.currentQuestion?.options ?? []} correctOptionId={room.correctTrack?.id} />
-            </strong>
-            {hasRevealedAnswer(player) ? (
-              <b className={['score-pop', player.lastAnswer.points < 0 ? 'penalty' : ''].filter(Boolean).join(' ')}>
-                {formatSignedPoints(player.lastAnswer.points)}
-                {player.lastAnswer.scoreNote && <small className="score-note">({player.lastAnswer.scoreNote})</small>}
-              </b>
-            ) : (
-              <small>0</small>
-            )}
-          </div>
-        ))}
       </div>
       <div className="actions">
         {isHost && (

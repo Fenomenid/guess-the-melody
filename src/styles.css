@@ -268,6 +268,14 @@ h2 {
   padding: 24px;
 }
 
+.page.result-page {
+  width: min(1560px, 100%);
+}
+
+.result-page .layout {
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
 .auth-page {
   min-height: 100vh;
   display: grid;
@@ -2294,6 +2302,49 @@ select:focus {
   gap: 8px;
 }
 
+.result-stage {
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.result-stage > h2,
+.result-stage > .actions {
+  width: min(1180px, 100%);
+  margin-inline: auto;
+}
+
+.round-result-grid {
+  width: min(1180px, 100%);
+  display: grid;
+  grid-template-columns: minmax(360px, 0.9fr) minmax(460px, 1.1fr);
+  align-items: start;
+  gap: 14px;
+  margin-inline: auto;
+}
+
+.round-result-primary,
+.round-result-secondary {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.round-result-primary > *,
+.round-result-secondary > * {
+  width: 100%;
+}
+
+.round-result-secondary .achievement-list,
+.round-result-secondary .round-drama-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.round-result-secondary .score-row {
+  min-height: 54px;
+  padding: 8px 10px;
+}
+
 .final-stage {
   position: relative;
   align-items: center;
@@ -2307,7 +2358,7 @@ select:focus {
 }
 
 .final-summary-grid {
-  width: min(980px, 100%);
+  width: min(1180px, 100%);
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
   align-items: start;
@@ -2413,7 +2464,7 @@ select:focus {
 }
 
 .final-list {
-  width: min(980px, 100%);
+  width: min(1180px, 100%);
   text-align: left;
 }
 
@@ -3379,6 +3430,68 @@ select:focus {
     padding: 14px;
   }
 
+  .result-page .layout {
+    gap: 12px;
+  }
+
+  .result-stage {
+    min-height: 0;
+    gap: 10px;
+  }
+
+  .result-stage > h2 {
+    font-size: clamp(28px, 3vw, 36px);
+  }
+
+  .round-result-grid {
+    gap: 10px;
+  }
+
+  .round-result-primary,
+  .round-result-secondary {
+    gap: 8px;
+  }
+
+  .round-result-primary .solution {
+    gap: 12px;
+    padding: 10px;
+  }
+
+  .round-result-primary .result-cover {
+    width: 78px;
+    min-width: 78px;
+  }
+
+  .round-result-primary .solution strong {
+    font-size: 24px;
+  }
+
+  .round-result-primary .comeback-panel {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .round-result-primary .comeback-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .round-result-primary .ability-grid,
+  .round-result-primary .ability-copy {
+    gap: 6px;
+  }
+
+  .round-result-secondary .achievement-card,
+  .round-result-secondary .round-drama-card {
+    min-height: 54px;
+    padding: 7px 8px;
+  }
+
+  .round-result-secondary .round-result-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
   .final-stage {
     min-height: 0;
     gap: 10px;
@@ -3393,6 +3506,7 @@ select:focus {
   }
 
   .final-summary-grid {
+    width: 100%;
     grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
     gap: 10px;
   }
@@ -3461,6 +3575,7 @@ select:focus {
   }
 
   .final-list {
+    width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
@@ -3564,6 +3679,16 @@ select:focus {
   }
 
   .final-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .round-result-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .round-result-secondary .achievement-list,
+  .round-result-secondary .round-drama-grid,
+  .round-result-secondary .round-result-list {
     grid-template-columns: 1fr;
   }
 
