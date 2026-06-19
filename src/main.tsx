@@ -2099,6 +2099,8 @@ function PlayerRows({
 
   const sourceIndex = attack ? players.findIndex((player) => player.id === attack.sourceId) : -1;
   const targetIndex = attack ? players.findIndex((player) => player.id === attack.targetId) : -1;
+  const rankingRowStepPx = 114;
+  const rankingRowCenterPx = 52;
 
   return (
     <div className="player-rows-stack">
@@ -2107,10 +2109,10 @@ function PlayerRows({
           className={`ranking-attack-line ${attack.kind}`}
           style={
             {
-              '--attack-top': `${Math.min(sourceIndex, targetIndex) * 88 + 38}px`,
-              '--attack-height': `${Math.abs(sourceIndex - targetIndex) * 88}px`,
-              '--attack-icon-start': `${(sourceIndex - Math.min(sourceIndex, targetIndex)) * 88}px`,
-              '--attack-distance': `${(targetIndex - sourceIndex) * 88}px`
+              '--attack-top': `${Math.min(sourceIndex, targetIndex) * rankingRowStepPx + rankingRowCenterPx}px`,
+              '--attack-height': `${Math.abs(sourceIndex - targetIndex) * rankingRowStepPx}px`,
+              '--attack-icon-start': `${(sourceIndex - Math.min(sourceIndex, targetIndex)) * rankingRowStepPx}px`,
+              '--attack-distance': `${(targetIndex - sourceIndex) * rankingRowStepPx}px`
             } as React.CSSProperties
           }
           aria-hidden="true"
@@ -2149,19 +2151,23 @@ function PlayerRows({
           <GeometricAvatar playerId={player.id} playerName={player.name} />
           <div className="player-row-copy">
             <strong className="player-name">
-              {index + 1}. {player.name}
+              <span className="player-name-text">{index + 1}. {player.name}</span>
               {player.id === playerId && <span className="self-mark">(вы)</span>}
               {player.isHost && <KeyRound size={15} aria-label="Хост" />}
             </strong>
-            <span>{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
-            {comebackEffect && (
-              <span className={`ranking-effect-badge ${comebackEffect.kind}`}>
-                {comebackEffect.kind === 'countered' ? <Zap size={12} /> : comebackEffect.kind === 'timecut' ? <Timer size={12} /> : <ScanLine size={12} />}
-                {comebackEffect.label}
-              </span>
-            )}
-            <div className="player-metrics">
+            <span className="player-status">{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
+          </div>
+          <div className="player-row-footer">
+            <div className="player-effect-slot">
+              {comebackEffect && (
+                <span className={`ranking-effect-badge ${comebackEffect.kind}`} title={comebackEffect.label}>
+                  {comebackEffect.kind === 'countered' ? <Zap size={12} /> : comebackEffect.kind === 'timecut' ? <Timer size={12} /> : <ScanLine size={12} />}
+                  {comebackEffect.label}
+                </span>
+              )}
               <StreakBadge streak={player.currentStreak} />
+            </div>
+            <div className="player-rank-slot">
               <RankTrend history={player.rankHistory} delta={player.rankDelta} />
             </div>
           </div>
