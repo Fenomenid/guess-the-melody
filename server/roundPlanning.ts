@@ -6,12 +6,25 @@ export type TrackPoolLimits = {
   shouldLoadInBackground: boolean;
 };
 
+type FinalizeRoundStartOptions = {
+  publish: () => void;
+  schedule: () => void;
+  persist: () => Promise<void>;
+  onPersistenceError?: (error: unknown) => void;
+};
+
 const BACKGROUND_POOL_ROUND_THRESHOLD = 24;
 const INITIAL_PLAYABLE_LIMIT = 16;
 const MIN_OPTION_LIMIT = 260;
 
 export function planRoundStart(now: number, warmupMs: number): number {
   return now + Math.max(0, Math.round(warmupMs));
+}
+
+export function finalizeRoundStart({ publish, schedule, persist, onPersistenceError }: FinalizeRoundStartOptions): void {
+  publish();
+  schedule();
+  void persist().catch((error) => onPersistenceError?.(error));
 }
 
 export function planTrackPoolLimits(plannedRounds: number): TrackPoolLimits {

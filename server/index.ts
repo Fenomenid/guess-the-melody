@@ -8,7 +8,7 @@ import { prepareTrackAudio, resolveAudioDeliveryMode } from './audioDelivery';
 import { GameEngine } from './game';
 import { MusicService } from './music';
 import { RoomStore } from './roomStore';
-import { planRoundStart, planTrackPoolLimits } from './roundPlanning';
+import { finalizeRoundStart, planRoundStart, planTrackPoolLimits } from './roundPlanning';
 import type { RoomSettings, Track, TrackMetadata } from './types';
 
 const port = Number(process.env.PORT ?? 3001);
@@ -425,20 +425,25 @@ async function startRound(code: string): Promise<void> {
 
   engine.startNextRound(room.code, tracks, optionTracks, undefined, planRoundStart(Date.now(), roundAudioWarmupMs));
   const updated = engine.getPublicRoom(room.code);
-  await persistRooms();
-  io.to(room.code).emit('round_started', updated);
-  io.to(room.code).emit('room_state', updated);
+  finalizeRoundStart({
+    publish: () => {
+      io.to(room.code).emit('round_started', updated);
+      io.to(room.code).emit('room_state', updated);
+    },
+    schedule: () => {
+      const timer = setTimeout(() => {
+        const revealed = engine.revealRound(room.code);
+        void persistRooms();
+        io.to(room.code).emit('round_result', revealed);
+        io.to(room.code).emit('room_state', revealed);
+        scheduleNextRound(revealed.code);
+        roundTimers.delete(room.code);
+      }, Math.max(0, (updated.currentQuestion?.endsAt ?? Date.now() + room.settings.questionDurationMs) - Date.now()));
 
-  const timer = setTimeout(() => {
-    const revealed = engine.revealRound(room.code);
-    void persistRooms();
-    io.to(room.code).emit('round_result', revealed);
-    io.to(room.code).emit('room_state', revealed);
-    scheduleNextRound(revealed.code);
-    roundTimers.delete(room.code);
-  }, Math.max(0, (updated.currentQuestion?.endsAt ?? Date.now() + room.settings.questionDurationMs) - Date.now()));
-
-  roundTimers.set(room.code, timer);
+      roundTimers.set(room.code, timer);
+    },
+    persist: persistRooms
+  });
 }
 
 function scheduleNextRound(code: string): void {

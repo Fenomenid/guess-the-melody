@@ -30,7 +30,12 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
-import { getQuestionAudioSessionKey, isSameAudioElementSource } from './audioScheduling';
+import {
+  createAudioDiagnosticEntry,
+  getQuestionAudioSessionKey,
+  isSameAudioElementSource,
+  resetQuestionAudioElement
+} from './audioScheduling';
 import { Starfield } from './starfield';
 import './styles.css';
 
@@ -1495,11 +1500,82 @@ function QrJoinCard({ roomCode, url }: { roomCode: string; url: string }) {
   );
 }
 
+type QuestionAudioElementProps = React.AudioHTMLAttributes<HTMLAudioElement> & {
+  diagnosticQuestion: Pick<NonNullable<Room['currentQuestion']>, 'id' | 'startedAt'>;
+};
+
 const QuestionAudioElement = React.memo(
-  React.forwardRef<HTMLAudioElement, React.AudioHTMLAttributes<HTMLAudioElement>>(function QuestionAudioElement({ src, ...props }, ref) {
-    return <audio ref={ref} src={src} preload="auto" {...props} />;
+  React.forwardRef<HTMLAudioElement, QuestionAudioElementProps>(function QuestionAudioElement(
+    { src, diagnosticQuestion, onLoadStart, onLoadedData, onCanPlay, onPlay, onPlaying, onWaiting, onStalled, onError, ...props },
+    ref
+  ) {
+    function diagnose(event: string, audio: HTMLAudioElement): void {
+      if (!isAudioDiagnosticsEnabled()) {
+        return;
+      }
+      console.info(
+        '[audio-diagnostic]',
+        createAudioDiagnosticEntry({
+          event,
+          questionId: diagnosticQuestion.id,
+          scheduledStartAt: diagnosticQuestion.startedAt,
+          now: Date.now(),
+          audio: {
+            currentTime: audio.currentTime,
+            readyState: audio.readyState,
+            networkState: audio.networkState,
+            paused: audio.paused,
+            errorCode: audio.error?.code ?? null
+          }
+        })
+      );
+    }
+
+    return (
+      <audio
+        ref={ref}
+        src={src}
+        preload="auto"
+        onLoadStart={(event) => {
+          diagnose('loadstart', event.currentTarget);
+          onLoadStart?.(event);
+        }}
+        onLoadedData={(event) => {
+          diagnose('loadeddata', event.currentTarget);
+          onLoadedData?.(event);
+        }}
+        onCanPlay={(event) => {
+          diagnose('canplay', event.currentTarget);
+          onCanPlay?.(event);
+        }}
+        onPlay={(event) => {
+          diagnose('play', event.currentTarget);
+          onPlay?.(event);
+        }}
+        onPlaying={(event) => {
+          diagnose('playing', event.currentTarget);
+          onPlaying?.(event);
+        }}
+        onWaiting={(event) => {
+          diagnose('waiting', event.currentTarget);
+          onWaiting?.(event);
+        }}
+        onStalled={(event) => {
+          diagnose('stalled', event.currentTarget);
+          onStalled?.(event);
+        }}
+        onError={(event) => {
+          diagnose('error', event.currentTarget);
+          onError?.(event);
+        }}
+        {...props}
+      />
+    );
   }),
-  (previous, next) => isSameAudioElementSource(previous.src, next.src)
+  (previous, next) =>
+    isSameAudioElementSource(previous.src, next.src) &&
+    previous.diagnosticQuestion.id === next.diagnosticQuestion.id &&
+    previous.diagnosticQuestion.startedAt === next.diagnosticQuestion.startedAt
 );
 
 function DisplayQuestionStage({
@@ -1532,6 +1608,7 @@ function DisplayQuestionStage({
       <QuestionAudioElement
         ref={audioRef}
         src={question.audioUrl}
+        diagnosticQuestion={question}
         onError={() => setAudioIssue('Не удалось воспроизвести этот отрывок.')}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
@@ -1769,6 +1846,7 @@ function PlayerQuestionStage({
       <QuestionAudioElement
         ref={audioRef}
         src={question.audioUrl}
+        diagnosticQuestion={question}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
         }}
@@ -2062,6 +2140,7 @@ function QuestionStage({
       <QuestionAudioElement
         ref={audioRef}
         src={question.audioUrl}
+        diagnosticQuestion={question}
         onError={() => setAudioIssue('Не удалось воспроизвести этот отрывок. Сервер попробует другой трек в следующем раунде.')}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = volume;
@@ -2691,13 +2770,7 @@ function useScheduledQuestionAudio({
     const audio = audioRef.current;
     if (audio) {
       audio.volume = volume;
-      audio.pause();
-      try {
-        audio.currentTime = 0;
-      } catch {
-        // Some remote audio URLs may not allow seeking before metadata is ready.
-      }
-      audio.load();
+      resetQuestionAudioElement(audio);
     }
 
     const delayMs = Math.max(0, question.startedAt - serverTime);
@@ -2715,6 +2788,10 @@ function useScheduledQuestionAudio({
   }, [volume]);
 
   return playAudio;
+}
+
+function isAudioDiagnosticsEnabled(): boolean {
+  return new URLSearchParams(window.location.search).get('audioDebug') === '1' || window.localStorage.getItem('audioDebug') === '1';
 }
 
 function useAutoNextCountdown(status: Room['status'], round: number, enabled = true): number {
