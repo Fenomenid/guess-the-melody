@@ -2158,10 +2158,10 @@ function PlayerRows({
               <span className="player-name-text">{player.name}</span>
               {player.isHost && <KeyRound size={15} aria-label="Хост" />}
             </strong>
-            <span className="player-status">
-              <span className="player-status-text">{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
-            </span>
           </div>
+          <span className="player-status">
+            <span className="player-status-text">{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
+          </span>
           <div className="player-row-footer">
             <div className="player-effect-slot">
               {comebackEffect && (
