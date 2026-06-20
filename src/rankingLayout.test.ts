@@ -35,7 +35,9 @@ describe('ranking score actions layout', () => {
 
   it('keeps the self marker out of the player name and status width', () => {
     expect(main).toMatch(/<GeometricAvatar[^>]*\/>\s*\{player\.id === playerId && <span className="avatar-self-mark">вы<\/span>\}/s);
-    expect(styles).toMatch(/\.avatar-self-mark\s*\{[^}]*position:\s*absolute;[^}]*left:\s*34px;/s);
+    expect(styles).toMatch(
+      /\.avatar-self-mark\s*\{[^}]*position:\s*absolute;[^}]*left:\s*29px;[^}]*top:\s*3px;[^}]*transform:\s*translateX\(-50%\);/s
+    );
     expect(styles).toMatch(/\.player-name-text\s*\{[^}]*flex:\s*1 1 auto;/s);
     expect(styles).toMatch(/\.player-status-text\s*\{[^}]*width:\s*100%;/s);
   });
