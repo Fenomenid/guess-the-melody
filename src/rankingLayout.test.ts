@@ -40,6 +40,15 @@ describe('ranking score actions layout', () => {
     expect(styles).toMatch(/\.player-status-text\s*\{[^}]*width:\s*100%;/s);
   });
 
+  it('gives the accepted-answer status its own full-width row', () => {
+    expect(main).toMatch(
+      /<div className="player-row-copy">[\s\S]*?<\/div>\s*<span className="player-status">[\s\S]*?className="player-status-text"/s
+    );
+    expect(styles).toMatch(/\.player-row\s*\{[^}]*grid-template-rows:\s*24px 18px 24px;/s);
+    expect(styles).toMatch(/\.player-status\s*\{[^}]*grid-column:\s*2 \/ 4;[^}]*grid-row:\s*2;/s);
+    expect(styles).toMatch(/\.player-row-footer\s*\{[^}]*grid-row:\s*3;/s);
+  });
+
   it('renders the ranking place in a dedicated gutter outside the tile', () => {
     expect(main).toMatch(/className="player-row-shell"[\s\S]*?>\s*<span className="player-rank-marker"[^>]*>[\s\S]*?<\/span>\s*<div\s+className=\{\[/s);
     expect(main).toMatch(/className="player-name-text">\{player\.name\}</s);
