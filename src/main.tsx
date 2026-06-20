@@ -2137,6 +2137,9 @@ function PlayerRows({
           className="player-row-shell"
           key={player.id}
         >
+          <span className="player-rank-marker" data-place={index + 1} aria-label={`${index + 1} место`}>
+            {index + 1}
+          </span>
           <div
           className={[
             'player-row',
@@ -2148,10 +2151,8 @@ function PlayerRows({
             .filter(Boolean)
             .join(' ')}
         >
-          <span className="player-rank-marker" data-place={index + 1} aria-label={`${index + 1} место`}>
-            {index + 1}
-          </span>
           <GeometricAvatar playerId={player.id} playerName={player.name} />
+          {player.id === playerId && <span className="avatar-self-mark">вы</span>}
           <div className="player-row-copy">
             <strong className="player-name">
               <span className="player-name-text">{player.name}</span>
@@ -2159,7 +2160,6 @@ function PlayerRows({
             </strong>
             <span className="player-status">
               <span className="player-status-text">{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
-              {player.id === playerId && <span className="self-mark">вы</span>}
             </span>
           </div>
           <div className="player-row-footer">
@@ -2167,7 +2167,7 @@ function PlayerRows({
               {comebackEffect && (
                 <span className={`ranking-effect-badge ${comebackEffect.kind}`} title={comebackEffect.label}>
                   {comebackEffect.kind === 'countered' ? <Zap size={12} /> : comebackEffect.kind === 'timecut' ? <Timer size={12} /> : <ScanLine size={12} />}
-                  {comebackEffect.label}
+                  {comebackEffect.kind === 'countered' ? 'Контрмера' : comebackEffect.label}
                 </span>
               )}
               <StreakBadge streak={player.currentStreak} />
