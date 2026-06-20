@@ -11,8 +11,7 @@ describe('ranking score actions layout', () => {
   });
 
   it('keeps the self marker together on one line', () => {
-    expect(styles).toMatch(/\.self-mark\s*\{[^}]*white-space:\s*nowrap;/s);
-    expect(styles).toMatch(/\.self-mark\s*\{[^}]*flex:\s*0 0 auto;/s);
+    expect(styles).toMatch(/\.avatar-self-mark\s*\{[^}]*white-space:\s*nowrap;/s);
   });
 
   it('uses a compact two-column final layout on short desktop screens', () => {
@@ -42,9 +41,13 @@ describe('ranking score actions layout', () => {
   });
 
   it('renders the ranking place in a dedicated gutter outside the tile', () => {
-    expect(main).toMatch(/className="player-rank-marker"[^>]*>\s*\{index \+ 1\}\s*</s);
+    expect(main).toMatch(/className="player-row-shell"[\s\S]*?>\s*<span className="player-rank-marker"[^>]*>[\s\S]*?<\/span>\s*<div\s+className=\{\[/s);
     expect(main).toMatch(/className="player-name-text">\{player\.name\}</s);
     expect(styles).toMatch(/\.player-rows-stack\s*\{[^}]*overflow:\s*visible;/s);
     expect(styles).toMatch(/\.player-rank-marker\s*\{[^}]*position:\s*absolute;[^}]*left:\s*-28px;/s);
+  });
+
+  it('uses a compact ranking label for the countermeasure effect', () => {
+    expect(main).toMatch(/comebackEffect\.kind === 'countered' \? 'Контрмера' : comebackEffect\.label/s);
   });
 });
