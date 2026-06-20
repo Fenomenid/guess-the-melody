@@ -2152,10 +2152,10 @@ function PlayerRows({
             .join(' ')}
         >
           <GeometricAvatar playerId={player.id} playerName={player.name} />
-          {player.id === playerId && <span className="avatar-self-mark">вы</span>}
           <div className="player-row-copy">
             <strong className="player-name">
               <span className="player-name-text">{player.name}</span>
+              {player.id === playerId && <span className="avatar-self-mark">вы</span>}
               {player.isHost && <KeyRound size={15} aria-label="Хост" />}
             </strong>
           </div>

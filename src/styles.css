@@ -1062,12 +1062,13 @@ h2 {
 }
 
 .avatar-self-mark {
-  position: absolute;
-  z-index: 4;
-  left: 29px;
-  top: 3px;
-  transform: translateX(-50%);
-  min-width: 20px;
+  display: inline-flex;
+  position: static;
+  z-index: 1;
+  min-width: 22px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   padding: 1px 4px;
   border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
   border-radius: 999px;
