@@ -34,10 +34,11 @@ describe('ranking score actions layout', () => {
     expect(styles).toMatch(/\.player-effect-slot\s*\{[^}]*overflow:\s*hidden;/s);
   });
 
-  it('keeps the self marker out of the player name width', () => {
-    expect(styles).toMatch(/\.player-status\s*\{[^}]*display:\s*flex;/s);
-    expect(styles).toMatch(/\.player-status\s+\.self-mark\s*\{[^}]*flex:\s*0 0 auto;/s);
+  it('keeps the self marker out of the player name and status width', () => {
+    expect(main).toMatch(/<GeometricAvatar[^>]*\/>\s*\{player\.id === playerId && <span className="avatar-self-mark">вы<\/span>\}/s);
+    expect(styles).toMatch(/\.avatar-self-mark\s*\{[^}]*position:\s*absolute;[^}]*left:\s*34px;/s);
     expect(styles).toMatch(/\.player-name-text\s*\{[^}]*flex:\s*1 1 auto;/s);
+    expect(styles).toMatch(/\.player-status-text\s*\{[^}]*width:\s*100%;/s);
   });
 
   it('renders the ranking place in a dedicated gutter outside the tile', () => {
