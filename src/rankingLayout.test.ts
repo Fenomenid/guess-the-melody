@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
+const main = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
 
 describe('ranking score actions layout', () => {
   it('reserves content-sized space for multi-digit scores before the kick button', () => {
@@ -37,5 +38,12 @@ describe('ranking score actions layout', () => {
     expect(styles).toMatch(/\.player-status\s*\{[^}]*display:\s*flex;/s);
     expect(styles).toMatch(/\.player-status\s+\.self-mark\s*\{[^}]*flex:\s*0 0 auto;/s);
     expect(styles).toMatch(/\.player-name-text\s*\{[^}]*flex:\s*1 1 auto;/s);
+  });
+
+  it('renders the ranking place in a dedicated gutter outside the tile', () => {
+    expect(main).toMatch(/className="player-rank-marker"[^>]*>\{index \+ 1\}</s);
+    expect(main).toMatch(/className="player-name-text">\{player\.name\}</s);
+    expect(styles).toMatch(/\.player-rows-stack\s*\{[^}]*padding-left:\s*34px;/s);
+    expect(styles).toMatch(/\.player-rank-marker\s*\{[^}]*position:\s*absolute;[^}]*left:\s*-34px;/s);
   });
 });
