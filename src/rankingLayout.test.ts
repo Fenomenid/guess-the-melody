@@ -32,4 +32,10 @@ describe('ranking score actions layout', () => {
     expect(styles).toMatch(/\.player-rank-slot\s*\{[^}]*width:\s*58px;/s);
     expect(styles).toMatch(/\.player-effect-slot\s*\{[^}]*overflow:\s*hidden;/s);
   });
+
+  it('keeps the self marker out of the player name width', () => {
+    expect(styles).toMatch(/\.player-status\s*\{[^}]*display:\s*flex;/s);
+    expect(styles).toMatch(/\.player-status\s+\.self-mark\s*\{[^}]*flex:\s*0 0 auto;/s);
+    expect(styles).toMatch(/\.player-name-text\s*\{[^}]*flex:\s*1 1 auto;/s);
+  });
 });
