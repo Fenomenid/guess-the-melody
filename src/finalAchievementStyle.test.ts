@@ -17,4 +17,8 @@ describe('final achievement visual style', () => {
     expect(styles).toMatch(/\.place-1\s*\{[^}]*--podium-accent:\s*var\(--gold\);/s);
     expect(styles).toMatch(/\.place-2\s*\{[^}]*--podium-accent:\s*var\(--accent-strong\);/s);
   });
+
+  it('anchors the podium to the player ranking when insights are taller', () => {
+    expect(styles).toMatch(/\.podium\s*\{[^}]*align-self:\s*end;/s);
+  });
 });
