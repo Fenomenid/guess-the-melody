@@ -40,7 +40,7 @@ import {
 import { buildAnswerJourney } from './answerJourney';
 import { getRankingComebackEffect } from './comebackPresentation';
 import { canHostKickPlayer } from './playerActions';
-import { getVisibleFinalPlayers } from './finalStageLayout';
+import { getVisibleFinalPlayers, getVisibleMatchMoments } from './finalStageLayout';
 import { createGeometricAvatar, getRankingAttack } from './rankingVisuals';
 import { Starfield } from './starfield';
 import './styles.css';
@@ -2148,10 +2148,13 @@ function PlayerRows({
             .filter(Boolean)
             .join(' ')}
         >
+          <span className="player-rank-marker" data-place={index + 1} aria-label={`${index + 1} место`}>
+            {index + 1}
+          </span>
           <GeometricAvatar playerId={player.id} playerName={player.name} />
           <div className="player-row-copy">
             <strong className="player-name">
-              <span className="player-name-text">{index + 1}. {player.name}</span>
+              <span className="player-name-text">{player.name}</span>
               {player.isHost && <KeyRound size={15} aria-label="Хост" />}
             </strong>
             <span className="player-status">
@@ -2819,6 +2822,9 @@ function escapeRegExp(value: string): string {
 }
 
 function MatchMoments({ moments }: { moments: MatchMoment[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const { visibleMoments, hiddenCount } = getVisibleMatchMoments(moments, expanded);
+
   if (moments.length === 0) {
     return null;
   }
@@ -2830,7 +2836,7 @@ function MatchMoments({ moments }: { moments: MatchMoment[] }) {
         <span>Моменты матча</span>
       </div>
       <div className="moment-list">
-        {moments.map((moment) => (
+        {visibleMoments.map((moment) => (
           <article className={`achievement-card moment-card ${moment.tone}`} key={moment.id}>
             <AchievementIcon achievement={moment} />
             <div>
@@ -2840,6 +2846,16 @@ function MatchMoments({ moments }: { moments: MatchMoment[] }) {
           </article>
         ))}
       </div>
+      {moments.length > 6 && (
+        <button
+          className="secondary moments-toggle"
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? 'Свернуть' : `Показать ещё: ${hiddenCount}`}
+        </button>
+      )}
     </section>
   );
 }

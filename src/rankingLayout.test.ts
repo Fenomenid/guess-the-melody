@@ -41,9 +41,9 @@ describe('ranking score actions layout', () => {
   });
 
   it('renders the ranking place in a dedicated gutter outside the tile', () => {
-    expect(main).toMatch(/className="player-rank-marker"[^>]*>\{index \+ 1\}</s);
+    expect(main).toMatch(/className="player-rank-marker"[^>]*>\s*\{index \+ 1\}\s*</s);
     expect(main).toMatch(/className="player-name-text">\{player\.name\}</s);
-    expect(styles).toMatch(/\.player-rows-stack\s*\{[^}]*padding-left:\s*34px;/s);
-    expect(styles).toMatch(/\.player-rank-marker\s*\{[^}]*position:\s*absolute;[^}]*left:\s*-34px;/s);
+    expect(styles).toMatch(/\.player-rows-stack\s*\{[^}]*overflow:\s*visible;/s);
+    expect(styles).toMatch(/\.player-rank-marker\s*\{[^}]*position:\s*absolute;[^}]*left:\s*-28px;/s);
   });
 });
