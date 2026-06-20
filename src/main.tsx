@@ -2152,10 +2152,12 @@ function PlayerRows({
           <div className="player-row-copy">
             <strong className="player-name">
               <span className="player-name-text">{index + 1}. {player.name}</span>
-              {player.id === playerId && <span className="self-mark">(вы)</span>}
               {player.isHost && <KeyRound size={15} aria-label="Хост" />}
             </strong>
-            <span className="player-status">{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
+            <span className="player-status">
+              <span className="player-status-text">{player.connected ? (player.lastAnswer ? 'Ответ принят' : room.status === 'question' ? 'Слушает' : 'В комнате') : 'Не в сети'}</span>
+              {player.id === playerId && <span className="self-mark">вы</span>}
+            </span>
           </div>
           <div className="player-row-footer">
             <div className="player-effect-slot">
